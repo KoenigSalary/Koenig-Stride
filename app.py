@@ -218,7 +218,7 @@ with col_title:
 # -----------------------------
 left, right = st.columns([1.2, 3])
 
-with left Center:
+with left:
     st.markdown("### 👩‍💼 Support")
     if SARIKA_PATH.exists():
         st.image(str(SARIKA_PATH), use_container_width=True)
