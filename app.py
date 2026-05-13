@@ -386,11 +386,14 @@ def submit_query(query):
 # HEADER WITH LOGO FIX
 # =====================================================
 
-logo_col, title_col = st.columns([1, 5])
+logo_col, title_col = st.columns([1.4, 4.6])
 
 with logo_col:
     if LOGO_PATH.exists():
-        st.image(str(LOGO_PATH), width=135)
+        st.image(
+            str(LOGO_PATH),
+            use_container_width=True
+        )
     else:
         st.markdown("### KOENIG")
 
