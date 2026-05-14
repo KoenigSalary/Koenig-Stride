@@ -1,8 +1,7 @@
 streamlit
 pandas
 openpyxl
-rapidfuzz
-openai
 sentence-transformers
-numpy
 scikit-learn
+openai
+numpy
