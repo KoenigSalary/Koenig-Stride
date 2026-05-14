@@ -15,13 +15,13 @@ except Exception:
     AI_AVAILABLE = False
 
 # =====================================================
-# KOENIG STRIDE - AUTH V1
+# KOENIG STRIDE - FINAL CLEAN UI
 # Admin + Employee Login
-# users.csv authentication
-# Default Employee Password: Welcome@123
-# First Login Password Change
-# Admin Password Change
-# Admin Employee Password Reset
+# Default employee password: Welcome@123
+# First-login password change
+# Admin employee password reset
+# Logo + Sarika + Blue UI
+# Start Here + Module > Category > Question + Direct Chat
 # =====================================================
 
 st.set_page_config(
@@ -64,9 +64,10 @@ SARIKA_B64 = image_to_base64(SARIKA_PATH)
 st.markdown("""
 <style>
 :root {
-    --blue-dark: #071a4f;
+    --blue-dark: #061b55;
+    --blue-mid: #0b3ba7;
     --blue: #155be8;
-    --bg: #f4f7fb;
+    --bg: #f5f8fd;
     --card: #ffffff;
     --border: #dbe3ef;
     --text: #111827;
@@ -94,16 +95,110 @@ st.markdown("""
     visibility: hidden !important;
 }
 
-.topbar {
-    background: #ffffff;
-    border-radius: 0 0 24px 24px;
-    padding: 20px 24px;
-    box-shadow: 0 8px 26px rgba(15,23,42,0.06);
+/* ---------------- LOGIN PAGE ---------------- */
+
+.login-shell {
+    min-height: 88vh;
+    display: grid;
+    grid-template-columns: 390px 1fr;
+    border-radius: 26px;
+    overflow: hidden;
+    box-shadow: 0 22px 60px rgba(15, 23, 42, 0.14);
+    background: white;
+}
+
+.login-left {
+    background: linear-gradient(180deg, #061b55 0%, #063a9e 58%, #004fd8 100%);
+    color: white;
+    padding: 46px 34px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.login-logo {
+    width: 230px;
+    max-width: 100%;
+    filter: brightness(1.4);
+    margin-bottom: 42px;
+}
+
+.login-brand {
+    border-top: 1px solid rgba(255,255,255,0.20);
+    border-bottom: 1px solid rgba(255,255,255,0.20);
+    padding: 28px 0;
+    margin-bottom: 35px;
+}
+
+.login-brand-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.login-bot-icon {
+    background: #1f6bff;
+    height: 46px;
+    width: 46px;
+    border-radius: 50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:22px;
+    font-weight:800;
+}
+
+.login-brand h1 {
+    font-size: 29px;
+    margin: 0;
+}
+
+.login-brand p {
+    margin: 12px 0 0 60px;
+    font-weight: 700;
+}
+
+.login-help {
+    border-top: 1px solid rgba(255,255,255,0.20);
+    padding-top: 26px;
+    text-align: center;
+    color: rgba(255,255,255,0.88);
+}
+
+.login-right {
+    padding: 58px 70px;
+    background: linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
+}
+
+.login-form-title {
+    font-size: 30px;
+    font-weight: 800;
     margin-bottom: 22px;
+    color: var(--text);
+}
+
+.login-form-box {
+    max-width: 520px;
+    margin: 0 auto;
+}
+
+.login-note {
+    color: var(--muted);
+    margin-bottom: 26px;
+}
+
+/* ---------------- MAIN APP ---------------- */
+
+.app-top {
+    display: grid;
+    grid-template-columns: 300px 1fr 250px;
+    gap: 26px;
+    align-items: center;
+    margin-bottom: 26px;
 }
 
 .logo-img {
-    width: 220px;
+    width: 230px;
     max-width: 100%;
     object-fit: contain;
 }
@@ -117,8 +212,8 @@ st.markdown("""
 .bot-icon {
     background: var(--blue);
     color: white;
-    width: 48px;
-    height: 48px;
+    width: 52px;
+    height: 52px;
     border-radius: 50%;
     display:flex;
     justify-content:center;
@@ -129,55 +224,148 @@ st.markdown("""
 
 .brand-title h1 {
     margin:0;
-    font-size:40px;
+    font-size:42px;
     color:var(--text);
     font-weight:800;
 }
 
 .brand-subtitle {
-    margin-left:64px;
+    margin-left:66px;
     color:#334155;
     font-size:16px;
     margin-top:4px;
+}
+
+.user-top {
+    display:flex;
+    align-items:center;
+    justify-content:flex-end;
+    gap:16px;
 }
 
 .user-pill {
     background:white;
     border:1px solid var(--border);
     padding:12px 18px;
-    border-radius:14px;
-    box-shadow:0 4px 16px rgba(15,23,42,0.06);
-    font-weight:700;
+    border-radius:18px;
+    box-shadow:0 8px 24px rgba(15,23,42,0.06);
+    font-weight:800;
+    text-align:left;
+}
+
+.logout-btn-wrap button {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    font-weight:800 !important;
+    color:#111827 !important;
+}
+
+.main-grid {
+    display:grid;
+    grid-template-columns: 235px 1fr;
+    gap: 28px;
+    align-items:start;
+}
+
+.profile-panel {
+    padding: 4px 0 0 0;
+    border-right: 1px solid #d8e0ef;
+    min-height: 680px;
+}
+
+.profile-card {
     text-align:center;
+    padding-bottom: 24px;
+    border-bottom: 1px solid #d8e0ef;
+    margin-bottom: 22px;
+}
+
+.avatar-img {
+    width:130px;
+    height:130px;
+    border-radius:50%;
+    object-fit:cover;
+    border:4px solid #1471d8;
+    box-shadow:0 8px 24px rgba(15,23,42,0.16);
+}
+
+.assistant-name {
+    font-size:24px;
+    font-weight:900;
+    margin-top:14px;
+}
+
+.online-text {
+    color:#15803d;
+    font-weight:800;
+    margin-top:8px;
+}
+
+.side-nav {
+    padding-right:18px;
+}
+
+.side-nav-item {
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:16px 14px;
+    border-radius:14px;
+    font-weight:800;
+    color:#111827;
+    margin-bottom:10px;
+}
+
+.side-nav-item.active {
+    background:#eaf2ff;
+    color:#0b55d9;
+}
+
+.content-area {
+    min-width:0;
 }
 
 .hero {
-    background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+    background:
+        radial-gradient(circle at 86% 42%, rgba(255,255,255,0.16), transparent 32%),
+        linear-gradient(135deg, #061b55 0%, #09379e 58%, #115ce8 100%);
     color:white;
-    padding:36px 42px;
-    border-radius:24px;
+    padding:58px 64px;
+    border-radius:22px;
     box-shadow:0 16px 40px rgba(15,23,42,0.16);
-    margin-bottom:18px;
+    margin-bottom:26px;
     display:flex;
     justify-content:space-between;
     align-items:center;
+    overflow:hidden;
 }
 
 .hero h2 {
-    font-size:36px;
-    margin:0 0 12px 0;
-    font-weight:800;
+    font-size:38px;
+    margin:0 0 18px 0;
+    font-weight:900;
 }
 
 .hero p {
-    font-size:17px;
+    font-size:20px;
     margin:0;
-    line-height:1.5;
+    line-height:1.55;
 }
 
 .hero-graphic {
-    font-size:70px;
+    font-size:82px;
     opacity:.95;
+}
+
+.primary-start button {
+    background: linear-gradient(90deg, #0b55d9, #155be8) !important;
+    color:white !important;
+    border:none !important;
+    border-radius:13px !important;
+    min-height:58px !important;
+    font-size:18px !important;
+    box-shadow:0 10px 24px rgba(21,91,232,0.28) !important;
 }
 
 .layout-card {
@@ -186,53 +374,12 @@ st.markdown("""
     border-radius:22px;
     box-shadow:0 14px 35px rgba(15,23,42,0.08);
     padding:24px;
-    margin-bottom:18px;
-}
-
-.assistant-name {
-    font-size:28px;
-    font-weight:800;
-    margin-bottom:18px;
-}
-
-.avatar-wrap {
-    display:flex;
-    justify-content:center;
-    position:relative;
-}
-
-.avatar-img {
-    width:230px;
-    height:230px;
-    border-radius:50%;
-    object-fit:cover;
-    border:5px solid #0b4f8a;
-    box-shadow:0 8px 24px rgba(15,23,42,0.18);
-}
-
-.status-dot {
-    position:absolute;
-    bottom:12px;
-    right:34px;
-    width:23px;
-    height:23px;
-    background:#22c55e;
-    border:4px solid white;
-    border-radius:50%;
-}
-
-.online-box {
-    background:#dcfce7;
-    color:#166534;
-    padding:13px 18px;
-    border-radius:14px;
-    font-weight:700;
-    margin-top:20px;
+    margin-bottom:22px;
 }
 
 .ask-title {
     font-size:28px;
-    font-weight:800;
+    font-weight:900;
     margin-bottom:18px;
     color:var(--text);
 }
@@ -297,26 +444,33 @@ st.markdown("""
     color:var(--muted);
 }
 
-.login-box {
-    background:white;
-    padding:40px;
-    border-radius:24px;
-    box-shadow:0 14px 35px rgba(15,23,42,0.10);
-    margin-top:50px;
+.chat-box-wrap div[data-testid="stForm"] {
     border:1px solid var(--border);
-}
-
-.login-title {
-    background: linear-gradient(135deg, var(--blue-dark), var(--blue));
-    color:white;
+    background:#ffffff;
     padding:24px;
     border-radius:18px;
-    margin-bottom:20px;
+    box-shadow:0 12px 28px rgba(15,23,42,0.06);
 }
 
-.login-title h1 {
-    margin:0;
-    font-size:32px;
+.chat-box-wrap div[data-testid="stFormSubmitButton"] button {
+    background:var(--blue) !important;
+    color:white !important;
+    border:none !important;
+    border-radius:12px !important;
+    min-height:48px;
+}
+
+div[data-testid="stTextInput"] input {
+    border-radius:12px;
+    min-height:50px;
+}
+
+div[data-testid="stExpander"] {
+    background:#ffffff;
+    border:1px solid var(--border);
+    border-radius:16px;
+    box-shadow:0 5px 16px rgba(15,23,42,0.04);
+    margin-bottom:10px;
 }
 
 .stButton > button {
@@ -334,40 +488,41 @@ st.markdown("""
     border-color:#93c5fd !important;
 }
 
-div[data-testid="stForm"] {
-    border:1px solid var(--border);
-    background:#ffffff;
-    padding:20px;
-    border-radius:17px;
-    box-shadow:0 8px 22px rgba(15,23,42,0.05);
+.footer-line {
+    margin-top:36px;
+    padding:22px 0;
+    border-top:1px solid #d8e0ef;
+    color:#64748b;
+    display:flex;
+    justify-content:space-between;
 }
 
-div[data-testid="stFormSubmitButton"] button {
-    background:var(--blue) !important;
-    color:white !important;
-    border:none !important;
-}
-
-div[data-testid="stTextInput"] input {
-    border-radius:12px;
-    min-height:50px;
-}
-
-div[data-testid="stExpander"] {
-    background:#ffffff;
-    border:1px solid var(--border);
-    border-radius:16px;
-    box-shadow:0 5px 16px rgba(15,23,42,0.04);
-    margin-bottom:10px;
-}
-
-@media only screen and (max-width:900px) {
-    .brand-title h1 { font-size:30px; }
-    .brand-subtitle { margin-left:0; }
-    .hero { padding:26px 22px; }
-    .hero h2 { font-size:28px; }
-    .hero-graphic { display:none; }
-    .avatar-img { width:200px; height:200px; }
+@media only screen and (max-width: 980px) {
+    .login-shell {
+        grid-template-columns: 1fr;
+    }
+    .login-left {
+        min-height: auto;
+    }
+    .app-top {
+        grid-template-columns: 1fr;
+    }
+    .main-grid {
+        grid-template-columns: 1fr;
+    }
+    .profile-panel {
+        border-right: none;
+        min-height: auto;
+    }
+    .hero {
+        padding:34px 28px;
+    }
+    .hero h2 {
+        font-size:30px;
+    }
+    .hero-graphic {
+        display:none;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -470,6 +625,7 @@ def update_user_password(user_id, new_password, first_login=False):
 
     df.loc[idx, "password_hash"] = hash_password(new_password)
     df.loc[idx, "first_login"] = "True" if first_login else "False"
+
     save_users(df)
     return True
 
@@ -505,77 +661,112 @@ if "selected_module" not in st.session_state:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
+if "show_change_password" not in st.session_state:
+    st.session_state.show_change_password = False
+
 # =====================================================
 # LOGIN + PASSWORD CHANGE
 # =====================================================
 
 def login_screen():
-    col1, col2, col3 = st.columns([1, 2, 1])
+    st.markdown("<div class='login-shell'>", unsafe_allow_html=True)
 
-    with col2:
-        if LOGO_B64:
-            st.markdown(
-                f"<div style='text-align:center; margin-bottom:20px;'><img src='data:image/png;base64,{LOGO_B64}' style='width:230px;'></div>",
-                unsafe_allow_html=True
-            )
+    st.markdown("<div class='login-left'>", unsafe_allow_html=True)
 
-        st.markdown("<div class='login-box'>", unsafe_allow_html=True)
+    if LOGO_B64:
+        st.markdown(
+            f"<img class='login-logo' src='data:image/png;base64,{LOGO_B64}'>",
+            unsafe_allow_html=True
+        )
 
-        st.markdown("""
-        <div class='login-title'>
-            <h1>🔐 Koenig Stride Login</h1>
-            <p style='margin:6px 0 0 0;'>Tax & Entity Nexus Assistant</p>
+    st.markdown("""
+        <div class='login-brand'>
+            <div class='login-brand-row'>
+                <div class='login-bot-icon'>☻</div>
+                <h1>Koenig Stride</h1>
+            </div>
+            <p>Tax & Entity Nexus Assistant</p>
         </div>
-        """, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-        login_type = st.selectbox("Login As", ["Employee", "Admin"])
+    st.markdown("<div>", unsafe_allow_html=True)
 
-        if login_type == "Employee":
-            user_id = st.text_input("Employee ID", placeholder="Example: 1001")
-            password = st.text_input("Password", type="password", placeholder="Default: Welcome@123")
+    login_type = st.radio("Login As", ["Employee", "Admin"], horizontal=True)
 
-            if st.button("Employee Login", use_container_width=True):
-                if not user_id.strip().isdigit():
-                    st.error("Please enter a valid numeric Employee ID.")
-                elif not password:
-                    st.error("Please enter password.")
-                else:
-                    ok, msg, row = authenticate_user(user_id, password)
-                    if ok:
-                        st.session_state.logged_in = True
-                        st.session_state.role = "Employee"
-                        st.session_state.employee_id = user_id.strip()
-                        st.session_state.employee_name = row.get("display_name", f"Employee {user_id}")
-                        st.session_state.must_change_password = bool_from_str(row.get("first_login", "False"))
-                        st.rerun()
-                    else:
-                        st.error(msg)
+    if login_type == "Employee":
+        user_id = st.text_input("Employee ID", placeholder="Example: 1001")
+        password = st.text_input("Password", type="password", placeholder="Default: Welcome@123")
 
-        else:
-            user_id = st.text_input("Admin Username", value="admin")
-            password = st.text_input("Password", type="password")
-
-            if st.button("Admin Login", use_container_width=True):
+        if st.button("Employee Login", use_container_width=True):
+            if not user_id.strip().isdigit():
+                st.error("Please enter a valid numeric Employee ID.")
+            elif not password:
+                st.error("Please enter password.")
+            else:
                 ok, msg, row = authenticate_user(user_id, password)
-                if ok and row.get("role") == "Admin":
+                if ok:
                     st.session_state.logged_in = True
-                    st.session_state.role = "Admin"
-                    st.session_state.employee_id = "admin"
-                    st.session_state.employee_name = row.get("display_name", "Admin")
+                    st.session_state.role = "Employee"
+                    st.session_state.employee_id = user_id.strip()
+                    st.session_state.employee_name = row.get("display_name", f"Employee {user_id}")
                     st.session_state.must_change_password = bool_from_str(row.get("first_login", "False"))
                     st.rerun()
-                elif ok:
-                    st.error("This is not an admin account.")
                 else:
                     st.error(msg)
+    else:
+        user_id = st.text_input("Admin Username", value="admin")
+        password = st.text_input("Password", type="password")
 
-        st.markdown("</div>", unsafe_allow_html=True)
+        if st.button("Admin Login", use_container_width=True):
+            ok, msg, row = authenticate_user(user_id, password)
+            if ok and row.get("role") == "Admin":
+                st.session_state.logged_in = True
+                st.session_state.role = "Admin"
+                st.session_state.employee_id = "admin"
+                st.session_state.employee_name = row.get("display_name", "Admin")
+                st.session_state.must_change_password = bool_from_str(row.get("first_login", "False"))
+                st.rerun()
+            elif ok:
+                st.error("This is not an admin account.")
+            else:
+                st.error(msg)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("""
+        <div class='login-help'>
+            <b>❔ Need help?</b><br>
+            <span>Contact your administrator for assistance.</span>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='login-right'>", unsafe_allow_html=True)
+    st.markdown("""
+        <div class='brand-title'>
+            <div class='bot-icon'>☻</div>
+            <h1>Koenig Stride</h1>
+        </div>
+        <div class='brand-subtitle'>Tax & Entity Nexus Assistant — Step Forward</div>
+        <br><br>
+        <div class='hero'>
+            <div>
+                <h2>Welcome to Koenig Stride</h2>
+                <p>Your secure internal assistant for tax, salary, entity and SPOC guidance.</p>
+            </div>
+            <div class='hero-graphic'>💬</div>
+        </div>
+    """, unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 def force_password_change_screen():
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
-        st.markdown("<div class='login-box'>", unsafe_allow_html=True)
+        st.markdown("<div class='layout-card'>", unsafe_allow_html=True)
         st.markdown("## 🔐 Change Password Required")
         st.info("For security, please change your default password before using Koenig Stride.")
 
@@ -937,41 +1128,38 @@ def logout():
     st.rerun()
 
 # =====================================================
-# TOP HEADER
+# MAIN APP HEADER
 # =====================================================
 
-st.markdown("<div class='topbar'>", unsafe_allow_html=True)
-h1, h2, h3 = st.columns([1.3, 3.2, 1.2])
+st.markdown("<div class='app-top'>", unsafe_allow_html=True)
 
-with h1:
-    if LOGO_B64:
-        st.markdown(f"<img class='logo-img' src='data:image/png;base64,{LOGO_B64}'>", unsafe_allow_html=True)
-    else:
-        st.markdown("## KOENIG")
+if LOGO_B64:
+    st.markdown(f"<img class='logo-img' src='data:image/png;base64,{LOGO_B64}'>", unsafe_allow_html=True)
+else:
+    st.markdown("## KOENIG")
 
-with h2:
-    st.markdown("""
+st.markdown("""
+<div>
     <div class="brand-title">
         <div class="bot-icon">☻</div>
         <h1>Koenig Stride</h1>
     </div>
     <div class="brand-subtitle">Tax & Entity Nexus Assistant — Step Forward</div>
-    """, unsafe_allow_html=True)
+</div>
+""", unsafe_allow_html=True)
 
-with h3:
-    role = st.session_state.role
-    emp_id = st.session_state.employee_id
-    emp_name = st.session_state.employee_name
-    st.markdown(f"""
+st.markdown(f"""
+<div class="user-top">
     <div class='user-pill'>
-    👤 {emp_name}<br>
-    <span style='font-size:12px;color:#64748b;'>Role: {role} · ID: {emp_id}</span>
+        👤 {st.session_state.employee_name}<br>
+        <span style='font-size:12px;color:#64748b;'>Role: {st.session_state.role} · ID: {st.session_state.employee_id}</span>
     </div>
-    """, unsafe_allow_html=True)
+</div>
+""", unsafe_allow_html=True)
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-logout_col1, logout_col2 = st.columns([6, 1])
+logout_col1, logout_col2 = st.columns([7, 1])
 with logout_col2:
     if st.button("Logout", use_container_width=True):
         logout()
@@ -983,164 +1171,172 @@ if load_error:
 # MAIN UI
 # =====================================================
 
-left, right = st.columns([1.05, 3.8], gap="large")
+st.markdown("<div class='main-grid'>", unsafe_allow_html=True)
 
-with left:
-    st.markdown("<div class='layout-card'>", unsafe_allow_html=True)
-    st.markdown("<div class='assistant-name'>👩‍💼 Sarika</div>", unsafe_allow_html=True)
+st.markdown("<div class='profile-panel'>", unsafe_allow_html=True)
 
-    if SARIKA_B64:
-        st.markdown(f"""
-        <div class="avatar-wrap">
-            <img class="avatar-img" src="data:image/png;base64,{SARIKA_B64}">
-            <span class="status-dot"></span>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.info("Sarika image not found.")
+st.markdown("<div class='profile-card'>", unsafe_allow_html=True)
+if SARIKA_B64:
+    st.markdown(f"<img class='avatar-img' src='data:image/png;base64,{SARIKA_B64}'>", unsafe_allow_html=True)
+else:
+    st.info("Sarika image not found.")
+st.markdown("<div class='assistant-name'>👩‍💼 Sarika</div>", unsafe_allow_html=True)
+st.markdown("<div class='online-text'>● Sarika is online</div>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='online-box'>● Sarika is online</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+st.markdown("""
+<div class='side-nav'>
+    <div class='side-nav-item active'>🏠 Home</div>
+    <div class='side-nav-item'>👤 Account</div>
+</div>
+""", unsafe_allow_html=True)
 
-    st.markdown("<div class='layout-card'>", unsafe_allow_html=True)
-    st.markdown("### 🔐 Account")
-    if st.button("Change My Password", use_container_width=True):
-        st.session_state.show_change_password = True
-    st.markdown("</div>", unsafe_allow_html=True)
+if st.button("🔧 Change Password", use_container_width=True):
+    st.session_state.show_change_password = not st.session_state.show_change_password
 
-    if st.session_state.get("show_change_password", False):
-        with st.expander("Change My Password", expanded=True):
-            old_password = st.text_input("Current Password", type="password", key="old_pwd")
-            new_password = st.text_input("New Password", type="password", key="new_pwd")
-            confirm_password = st.text_input("Confirm Password", type="password", key="confirm_pwd")
+if st.session_state.show_change_password:
+    with st.expander("Change My Password", expanded=True):
+        old_password = st.text_input("Current Password", type="password", key="old_pwd")
+        new_password = st.text_input("New Password", type="password", key="new_pwd")
+        confirm_password = st.text_input("Confirm Password", type="password", key="confirm_pwd")
 
-            if st.button("Update My Password", use_container_width=True):
-                ok, msg, row = authenticate_user(st.session_state.employee_id, old_password)
-                if not ok:
-                    st.error("Current password is incorrect.")
-                elif new_password != confirm_password:
-                    st.error("New password and confirm password do not match.")
-                else:
-                    valid, vmsg = validate_password_strength(new_password)
-                    if not valid:
-                        st.error(vmsg)
-                    else:
-                        update_user_password(st.session_state.employee_id, new_password, first_login=False)
-                        st.success("Password changed successfully.")
-                        st.session_state.show_change_password = False
-
-with right:
-    st.markdown("""
-    <div class="hero">
-        <div>
-            <h2>Welcome to Koenig Stride</h2>
-            <p>Select Start Here to browse guided help, or use the chat box to ask directly.</p>
-        </div>
-        <div class="hero-graphic">💬</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("<div class='layout-card'>", unsafe_allow_html=True)
-    st.markdown("<div class='info-box'>Click Start Here to open guided help categories.</div>", unsafe_allow_html=True)
-
-    if st.button("🚀 Start Here", use_container_width=True):
-        st.session_state.menu_open = True
-
-    if st.session_state.menu_open:
-        modules = [
-            ("✅ Tax FAQs", "Tax FAQs"),
-            ("✅ Salary Queries", "Salary Queries"),
-            ("⚖️ Labour Code", "Labour Code"),
-            ("✅ Entity Nexus", "Entity Nexus"),
-            ("✅ SPOC Routing", "SPOC Routing"),
-            ("🔒 Protected Information Routing", "Protected Information Routing"),
-            ("✅ Compliance Support", "Compliance Support"),
-        ]
-
-        rows = [st.columns(2), st.columns(2), st.columns(2), st.columns(1)]
-        flat_cols = rows[0] + rows[1] + rows[2] + rows[3]
-
-        for i, (label, module_name) in enumerate(modules):
-            with flat_cols[i]:
-                if st.button(label, key=f"module_{i}", use_container_width=True):
-                    st.session_state.selected_module = module_name
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if st.session_state.selected_module:
-        selected = st.session_state.selected_module
-        st.markdown("<div class='layout-card'>", unsafe_allow_html=True)
-        st.markdown(f"<span class='selected-pill'>Selected: {selected}</span>", unsafe_allow_html=True)
-        st.markdown("<div class='ask-title'>Select Category</div>", unsafe_allow_html=True)
-
-        categories = get_categories_for_module(faq_df, selected)
-
-        if categories:
-            for category in categories:
-                cat_df = get_questions_by_module_category(faq_df, selected, category)
-                if cat_df.empty:
-                    continue
-
-                with st.expander(f"📂 {category} ({len(cat_df)} questions)", expanded=False):
-                    q_col = get_question_column(cat_df)
-
-                    for _, row in cat_df.iterrows():
-                        question = safe_get(row, q_col or "Question")
-                        if not question:
-                            continue
-                        with st.expander(f"❓ {question}", expanded=False):
-                            render_answer(row)
-        else:
-            st.info("No categories found under this section. Please check the Category column in Excel.")
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<div class='layout-card'>", unsafe_allow_html=True)
-    st.markdown("<div class='ask-title'>💬 Ask Koenig Stride Directly</div>", unsafe_allow_html=True)
-
-    with st.form("ask_form", clear_on_submit=True):
-        query = st.text_input("Type your question here", placeholder="Example: What is NPS?")
-        submitted = st.form_submit_button("➤ Ask Koenig Stride")
-
-    if submitted and query.strip():
-        with st.spinner("Koenig Stride is thinking..."):
-            submit_query(query.strip())
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if st.session_state.chat_history:
-        st.markdown("<div class='layout-card'>", unsafe_allow_html=True)
-        st.markdown("<div class='ask-title'>Conversation</div>", unsafe_allow_html=True)
-
-        for item in reversed(st.session_state.chat_history[-10:]):
-            st.markdown(f"<div class='user-bubble'><b>You:</b><br>{item['query']}</div>", unsafe_allow_html=True)
-
-            if item["type"] == "protected":
-                email_html = f"<br><b>Email:</b> {item.get('email','')}" if item.get("email") else ""
-                st.markdown(f"""
-                <div class='protected-box'>
-                <b>🔒 Koenig Stride:</b><br>
-                {item['answer']}<br><br>
-                Please contact:<br>
-                <b>SPOC:</b> {item.get('spoc','Relevant SPOC')}
-                {email_html}<br><br>
-                <span class='small-text'>Source: {item.get('source','')} | Similarity: {item.get('similarity',0):.2f}</span>
-                </div>
-                """, unsafe_allow_html=True)
+        if st.button("Update My Password", use_container_width=True):
+            ok, msg, row = authenticate_user(st.session_state.employee_id, old_password)
+            if not ok:
+                st.error("Current password is incorrect.")
+            elif new_password != confirm_password:
+                st.error("New password and confirm password do not match.")
             else:
-                if st.session_state.role == "Admin":
-                    meta = f"<br><br><span class='small-text'>Source: {item.get('source','')} | Similarity: {item.get('similarity',0):.2f}</span>"
+                valid, vmsg = validate_password_strength(new_password)
+                if not valid:
+                    st.error(vmsg)
                 else:
-                    meta = ""
-                st.markdown(f"""
-                <div class='bot-bubble'>
-                <b>Koenig Stride:</b><br>
-                {item['answer']}
-                {meta}
-                </div>
-                """, unsafe_allow_html=True)
+                    update_user_password(st.session_state.employee_id, new_password, first_login=False)
+                    st.success("Password changed successfully.")
+                    st.session_state.show_change_password = False
 
-        st.markdown("</div>", unsafe_allow_html=True)
+st.markdown("""
+<div class='side-nav'>
+    <div class='side-nav-item'>ℹ️ Help & Support</div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown("<div class='content-area'>", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="hero">
+    <div>
+        <h2>Welcome to Koenig Stride</h2>
+        <p>Select Start Here to browse guided help,<br>or use the chat box to ask directly.</p>
+    </div>
+    <div class="hero-graphic">💬</div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("<div class='primary-start'>", unsafe_allow_html=True)
+if st.button("🚀 Start Here                                              →", use_container_width=True):
+    st.session_state.menu_open = True
+st.markdown("</div>", unsafe_allow_html=True)
+
+if st.session_state.menu_open:
+    st.markdown("<div class='layout-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='ask-title'>Select Area</div>", unsafe_allow_html=True)
+
+    modules = [
+        ("✅ Tax FAQs", "Tax FAQs"),
+        ("✅ Salary Queries", "Salary Queries"),
+        ("⚖️ Labour Code", "Labour Code"),
+        ("✅ Entity Nexus", "Entity Nexus"),
+        ("✅ SPOC Routing", "SPOC Routing"),
+        ("🔒 Protected Information Routing", "Protected Information Routing"),
+        ("✅ Compliance Support", "Compliance Support"),
+    ]
+
+    rows = [st.columns(2), st.columns(2), st.columns(2), st.columns(1)]
+    flat_cols = rows[0] + rows[1] + rows[2] + rows[3]
+
+    for i, (label, module_name) in enumerate(modules):
+        with flat_cols[i]:
+            if st.button(label, key=f"module_{i}", use_container_width=True):
+                st.session_state.selected_module = module_name
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+if st.session_state.selected_module:
+    selected = st.session_state.selected_module
+    st.markdown("<div class='layout-card'>", unsafe_allow_html=True)
+    st.markdown(f"<span class='selected-pill'>Selected: {selected}</span>", unsafe_allow_html=True)
+    st.markdown("<div class='ask-title'>Select Category</div>", unsafe_allow_html=True)
+
+    categories = get_categories_for_module(faq_df, selected)
+
+    if categories:
+        for category in categories:
+            cat_df = get_questions_by_module_category(faq_df, selected, category)
+            if cat_df.empty:
+                continue
+
+            with st.expander(f"📂 {category} ({len(cat_df)} questions)", expanded=False):
+                q_col = get_question_column(cat_df)
+
+                for _, row in cat_df.iterrows():
+                    question = safe_get(row, q_col or "Question")
+                    if not question:
+                        continue
+                    with st.expander(f"❓ {question}", expanded=False):
+                        render_answer(row)
+    else:
+        st.info("No categories found under this section. Please check the Category column in Excel.")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown("<div class='ask-title' style='margin-top:24px;'>💬 Ask Koenig Stride Directly</div>", unsafe_allow_html=True)
+
+st.markdown("<div class='chat-box-wrap'>", unsafe_allow_html=True)
+with st.form("ask_form", clear_on_submit=True):
+    query = st.text_input("Type your question here", placeholder="Example: What is NPS?")
+    submitted = st.form_submit_button("➤ Ask Koenig Stride")
+
+if submitted and query.strip():
+    with st.spinner("Koenig Stride is thinking..."):
+        submit_query(query.strip())
+st.markdown("</div>", unsafe_allow_html=True)
+
+if st.session_state.chat_history:
+    st.markdown("<div class='layout-card' style='margin-top:22px;'>", unsafe_allow_html=True)
+    st.markdown("<div class='ask-title'>Conversation</div>", unsafe_allow_html=True)
+
+    for item in reversed(st.session_state.chat_history[-10:]):
+        st.markdown(f"<div class='user-bubble'><b>You:</b><br>{item['query']}</div>", unsafe_allow_html=True)
+
+        if item["type"] == "protected":
+            email_html = f"<br><b>Email:</b> {item.get('email','')}" if item.get("email") else ""
+            st.markdown(f"""
+            <div class='protected-box'>
+            <b>🔒 Koenig Stride:</b><br>
+            {item['answer']}<br><br>
+            Please contact:<br>
+            <b>SPOC:</b> {item.get('spoc','Relevant SPOC')}
+            {email_html}<br><br>
+            <span class='small-text'>Source: {item.get('source','')} | Similarity: {item.get('similarity',0):.2f}</span>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            if st.session_state.role == "Admin":
+                meta = f"<br><br><span class='small-text'>Source: {item.get('source','')} | Similarity: {item.get('similarity',0):.2f}</span>"
+            else:
+                meta = ""
+            st.markdown(f"""
+            <div class='bot-bubble'>
+            <b>Koenig Stride:</b><br>
+            {item['answer']}
+            {meta}
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # =====================================================
 # ADMIN ONLY PANEL
@@ -1181,4 +1377,12 @@ if st.session_state.role == "Admin":
                     cols = [c for c in ["Question", "Source", "Protected", "SPOC Name", "SPOC Email", "similarity"] if c in test_results.columns]
                     st.dataframe(test_results[cols], use_container_width=True)
 
-st.caption("Koenig Stride · Internal Tax & Entity Nexus Assistant")
+st.markdown("""
+<div class='footer-line'>
+    <div>© 2025 Koenig Solutions Ltd. All rights reserved.</div>
+    <div>Privacy Policy &nbsp;&nbsp; | &nbsp;&nbsp; Terms of Use</div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("</div>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)
