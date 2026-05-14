@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 from pathlib import Path
@@ -25,6 +24,19 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
+# =====================================================
+# SESSION STATE
+# =====================================================
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if "role" not in st.session_state:
+    st.session_state.role = None
+
+if "employee_id" not in st.session_state:
+    st.session_state.employee_id = None
 
 # =====================================================
 # PATHS
@@ -741,6 +753,14 @@ if load_error:
     st.error(load_error)
 
 # =====================================================
+# LOGIN CHECK
+# =====================================================
+
+if not st.session_state.logged_in:
+    login_screen()
+    st.stop()
+
+# =====================================================
 # MAIN UI
 # =====================================================
 
@@ -869,6 +889,89 @@ with right:
                 </div>
                 """, unsafe_allow_html=True)
 
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# =====================================================
+# LOGIN SYSTEM
+# =====================================================
+
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "admin123"
+
+
+def login_screen():
+
+    st.markdown("""
+    <style>
+    .login-box {
+        background: white;
+        padding: 40px;
+        border-radius: 22px;
+        box-shadow: 0 14px 35px rgba(15,23,42,0.08);
+        margin-top: 80px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1,2,1])
+
+    with col2:
+
+        st.markdown("<div class='login-box'>", unsafe_allow_html=True)
+
+        st.markdown("## 🔐 Koenig Stride Login")
+        st.markdown("### Tax & Entity Nexus Assistant")
+
+        login_type = st.selectbox(
+            "Login As",
+            ["Employee", "Admin"]
+        )
+
+    # =====================================================
+    # EMPLOYEE LOGIN
+    # =====================================================
+
+    if login_type == "Employee":
+
+        emp_id = st.text_input(
+            "Enter Employee ID",
+            placeholder="Example: 1001"
+        )
+
+        employee_name = f"Employee {emp_id}" if emp_id.strip().isdigit() else ""
+
+        if st.button("Employee Login", use_container_width=True):
+
+            if emp_id.strip().isdigit():
+
+                st.session_state.logged_in = True
+                st.session_state.role = "Employee"
+                st.session_state.employee_id = emp_id
+                st.session_state.employee_name = employee_name
+
+                st.rerun()
+
+            else:
+                st.error("Please enter a valid numeric Employee ID")
+
+        # =====================================================
+        # ADMIN LOGIN
+        # =====================================================
+
+        else:
+
+            username = st.text_input("Admin Username")
+            password = st.text_input(
+                "Password",
+                type="password"
+            )
+
+            if st.button("Admin Login", use_container_width=True):
+
+                if (
+                    username == ADMIN_USERNAME
+                    and password == ADMIN_PASSWORD
+                ):
         st.markdown("</div>", unsafe_allow_html=True)
 
 # =====================================================
