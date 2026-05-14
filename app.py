@@ -14,7 +14,7 @@ except Exception:
     AI_AVAILABLE = False
 
 # =====================================================
-# KOENIG STRIDE - STABLE AUTH UI
+# KOENIG STRIDE - POLISHED LOGIN UI + RESPONSIVE
 # Streamlit-native layout, no broken HTML wrappers
 # =====================================================
 
@@ -59,22 +59,33 @@ def img_html(b64, css_class="", style=""):
 st.markdown("""
 <style>
 :root {
+    --blue-darker:#04123d;
     --blue-dark:#061b55;
     --blue-mid:#0b3ba7;
     --blue:#155be8;
-    --bg:#f5f8fd;
+    --blue-light:#1f6bff;
+    --bg:#eef3fb;
     --card:#ffffff;
     --border:#dbe3ef;
     --text:#111827;
     --muted:#64748b;
 }
 
+html, body, [class*="css"] {
+    font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
 [data-testid="stAppViewContainer"] {
-    background: var(--bg);
+    background:
+        radial-gradient(circle at 8% 12%, rgba(21,91,232,.08), transparent 35%),
+        radial-gradient(circle at 92% 88%, rgba(6,27,85,.07), transparent 40%),
+        var(--bg);
 }
 
 .block-container {
-    padding-top: 1rem;
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
     max-width: 1320px;
 }
 
@@ -90,24 +101,49 @@ st.markdown("""
     visibility:hidden !important;
 }
 
+/* ---------- LOGIN PAGE ---------- */
+
+.login-wrapper {
+    padding-top: 10px;
+}
+
 .logo-img {
     width:220px;
     max-width:100%;
+    height:auto;
 }
 
 .login-card {
-    background:linear-gradient(180deg,#061b55 0%,#063a9e 58%,#004fd8 100%);
+    background:
+        radial-gradient(circle at 18% 6%, rgba(255,255,255,.10), transparent 38%),
+        radial-gradient(circle at 88% 92%, rgba(255,255,255,.08), transparent 40%),
+        linear-gradient(160deg,#04123d 0%,#06339a 55%,#0a52d6 100%);
     color:white;
-    padding:38px;
+    padding:42px 38px;
     border-radius:24px;
-    box-shadow:0 22px 55px rgba(15,23,42,.18);
-    min-height:650px;
+    box-shadow:0 22px 55px rgba(15,23,42,.22);
+    min-height:680px;
+    display:flex;
+    flex-direction:column;
+    position:relative;
+    overflow:hidden;
+}
+
+.login-card::before {
+    content:"";
+    position:absolute;
+    top:-60px; right:-60px;
+    width:220px; height:220px;
+    background:radial-gradient(circle, rgba(255,255,255,.10), transparent 70%);
+    border-radius:50%;
+    pointer-events:none;
 }
 
 .login-card h1 {
     color:white;
-    font-size:32px;
+    font-size:30px;
     margin:0;
+    letter-spacing:-0.3px;
 }
 
 .login-card label,
@@ -116,13 +152,87 @@ st.markdown("""
     color:white !important;
 }
 
-.login-panel {
-    background:white;
-    padding:38px;
-    border-radius:24px;
-    box-shadow:0 18px 45px rgba(15,23,42,.10);
-    border:1px solid var(--border);
+/* Make form inputs inside the dark login card look clean */
+.login-card div[data-testid="stTextInput"] input,
+div[data-testid="stTextInput"] input {
+    border-radius:12px;
+    min-height:48px;
+    border:1px solid #d6deec;
+    background:#ffffff;
+    color:#0f172a;
+    font-size:15px;
+    padding:10px 14px;
+    transition:border .15s ease, box-shadow .15s ease;
 }
+
+div[data-testid="stTextInput"] input:focus {
+    border-color:var(--blue) !important;
+    box-shadow:0 0 0 3px rgba(21,91,232,.18) !important;
+    outline:none !important;
+}
+
+div[data-testid="stTextInput"] label p {
+    font-weight:700 !important;
+    font-size:14px !important;
+    letter-spacing:.2px;
+}
+
+/* Radio (Login As) inside dark card */
+div[data-testid="stRadio"] label p {
+    color:white !important;
+    font-weight:700 !important;
+}
+
+div[data-testid="stRadio"] > div {
+    gap: 18px !important;
+}
+
+.login-divider {
+    border-top:1px solid rgba(255,255,255,.20);
+    border-bottom:1px solid rgba(255,255,255,.20);
+    padding:24px 0;
+    margin:8px 0 28px 0;
+}
+
+.login-brand-row {
+    display:flex;
+    align-items:center;
+    gap:14px;
+}
+
+.login-bot-icon {
+    background:linear-gradient(135deg,#1f6bff,#155be8);
+    color:white;
+    height:46px;
+    width:46px;
+    min-width:46px;
+    border-radius:50%;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:900;
+    font-size:22px;
+    box-shadow:0 6px 18px rgba(21,91,232,.45);
+}
+
+.login-tagline {
+    margin:14px 0 0 60px;
+    font-weight:600;
+    font-size:14px;
+    opacity:.92;
+    letter-spacing:.2px;
+}
+
+.login-help {
+    border-top:1px solid rgba(255,255,255,.20);
+    padding-top:24px;
+    margin-top:auto;
+    text-align:center;
+    font-size:14px;
+    line-height:1.6;
+}
+
+/* ---------- BRAND (right side / header) ---------- */
 
 .brand-row {
     display:flex;
@@ -131,30 +241,34 @@ st.markdown("""
 }
 
 .bot-icon {
-    background:var(--blue);
+    background:linear-gradient(135deg,#155be8,#0b3ba7);
     color:white;
     height:50px;
     width:50px;
+    min-width:50px;
     border-radius:50%;
     display:inline-flex;
     align-items:center;
     justify-content:center;
     font-weight:900;
     font-size:24px;
+    box-shadow:0 6px 16px rgba(21,91,232,.35);
 }
 
 .brand-title {
-    font-size:40px;
+    font-size:38px;
     font-weight:900;
     color:var(--text);
     margin:0;
+    letter-spacing:-0.5px;
 }
 
 .brand-subtitle {
-    margin-left:66px;
+    margin-left:64px;
     margin-top:4px;
     color:#334155;
-    font-size:16px;
+    font-size:15px;
+    font-weight:500;
 }
 
 .user-pill {
@@ -166,30 +280,41 @@ st.markdown("""
     font-weight:800;
 }
 
+/* ---------- HERO ---------- */
+
 .hero {
     background:
-        radial-gradient(circle at 86% 42%, rgba(255,255,255,.16), transparent 32%),
-        linear-gradient(135deg,#061b55 0%,#09379e 58%,#115ce8 100%);
+        radial-gradient(circle at 86% 42%, rgba(255,255,255,.18), transparent 32%),
+        linear-gradient(135deg,#04123d 0%,#0a3aae 55%,#155be8 100%);
     color:white;
     padding:46px 52px;
     border-radius:24px;
-    box-shadow:0 16px 40px rgba(15,23,42,.16);
+    box-shadow:0 16px 40px rgba(15,23,42,.18);
     margin-bottom:22px;
 }
 
 .hero h2 {
-    font-size:36px;
-    margin:0 0 16px 0;
+    font-size:34px;
+    margin:0 0 14px 0;
     color:white;
     font-weight:900;
+    letter-spacing:-0.4px;
 }
 
 .hero p {
     color:white;
-    font-size:19px;
+    font-size:18px;
     line-height:1.55;
     margin:0;
+    opacity:.95;
 }
+
+/* Hero on the LOGIN page is slightly different */
+.login-hero {
+    margin-top: 6px;
+}
+
+/* ---------- CARDS ---------- */
 
 .card {
     background:white;
@@ -201,8 +326,8 @@ st.markdown("""
 }
 
 .avatar-img {
-    width:160px;
-    height:160px;
+    width:150px;
+    height:150px;
     border-radius:50%;
     object-fit:cover;
     border:4px solid #1471d8;
@@ -244,13 +369,16 @@ st.markdown("""
     background:white !important;
     color:#111827 !important;
     box-shadow:0 5px 16px rgba(15,23,42,.05) !important;
+    transition:transform .08s ease, box-shadow .15s ease, background .15s ease;
 }
 
 .stButton > button:hover {
     background:#eff6ff !important;
     border-color:#93c5fd !important;
+    transform:translateY(-1px);
 }
 
+/* The two login buttons should look primary */
 div[data-testid="stForm"] {
     border:1px solid var(--border);
     background:#ffffff;
@@ -260,15 +388,30 @@ div[data-testid="stForm"] {
 }
 
 div[data-testid="stFormSubmitButton"] button {
-    background:var(--blue) !important;
+    background:linear-gradient(90deg,#0b55d9,#155be8) !important;
     color:white !important;
     border:none !important;
+    box-shadow:0 8px 20px rgba(21,91,232,.30) !important;
 }
 
-div[data-testid="stTextInput"] input {
-    border-radius:12px;
-    min-height:48px;
+/* Make the Employee/Admin Login buttons stand out (they live inside the dark card) */
+.login-card .stButton > button {
+    background:linear-gradient(90deg,#1f6bff,#0b55d9) !important;
+    color:white !important;
+    border:none !important;
+    min-height:54px !important;
+    font-size:16px !important;
+    font-weight:800 !important;
+    box-shadow:0 10px 24px rgba(21,91,232,.40) !important;
+    letter-spacing:.2px;
 }
+
+.login-card .stButton > button:hover {
+    background:linear-gradient(90deg,#2b78ff,#1156e0) !important;
+    transform:translateY(-1px);
+}
+
+/* ---------- ANSWER BUBBLES ---------- */
 
 .answer-box {
     background:#f0fdf4;
@@ -328,13 +471,75 @@ div[data-testid="stTextInput"] input {
     color:#64748b;
     display:flex;
     justify-content:space-between;
+    flex-wrap:wrap;
+    gap:10px;
+    font-size:13px;
 }
 
-@media only screen and (max-width: 900px) {
-    .brand-title {font-size:30px;}
-    .brand-subtitle {margin-left:0;}
-    .hero {padding:30px 24px;}
-    .hero h2 {font-size:29px;}
+/* ---------- RESPONSIVE ---------- */
+
+/* Tablet */
+@media only screen and (max-width: 1100px) {
+    .block-container { padding-left:1rem; padding-right:1rem; }
+    .login-card { min-height:auto; padding:34px 28px; }
+    .hero { padding:36px 32px; }
+    .brand-title { font-size:32px; }
+    .brand-subtitle { font-size:14px; }
+}
+
+/* Mobile */
+@media only screen and (max-width: 760px) {
+    .block-container { padding-left:0.6rem; padding-right:0.6rem; padding-top:0.5rem; }
+
+    .login-card {
+        min-height:auto;
+        padding:28px 22px;
+        border-radius:20px;
+    }
+    .login-card h1 { font-size:24px; }
+    .login-tagline { margin-left:58px; font-size:13px; }
+    .login-divider { padding:18px 0; margin:6px 0 20px 0; }
+    .login-help { padding-top:18px; font-size:13px; }
+
+    .brand-title { font-size:26px; }
+    .brand-subtitle { margin-left:0; margin-top:8px; font-size:13px; }
+    .brand-row { flex-wrap:wrap; }
+
+    .hero {
+        padding:26px 22px;
+        border-radius:20px;
+    }
+    .hero h2 { font-size:24px; }
+    .hero p { font-size:15px; }
+
+    .avatar-img { width:120px; height:120px; }
+
+    .card { padding:18px; border-radius:18px; }
+
+    .user-pill { font-size:13px; padding:10px 14px; }
+
+    .footer-line {
+        flex-direction:column;
+        text-align:center;
+    }
+
+    .login-card .stButton > button,
+    .stButton > button {
+        font-size:15px !important;
+        min-height:48px !important;
+    }
+}
+
+/* Very small screens */
+@media only screen and (max-width: 420px) {
+    .login-card { padding:22px 16px; }
+    .login-card h1 { font-size:21px; }
+    .login-bot-icon { height:40px; width:40px; min-width:40px; font-size:19px; }
+    .login-tagline { margin-left:54px; }
+    .brand-title { font-size:22px; }
+    .bot-icon { height:42px; width:42px; min-width:42px; font-size:20px; }
+    .hero h2 { font-size:21px; }
+    .hero p { font-size:14px; }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -463,23 +668,27 @@ for k, v in defaults.items():
 # =====================================================
 
 def login_screen():
-    left, right = st.columns([1, 1.8], gap="large")
+    st.markdown("<div class='login-wrapper'></div>", unsafe_allow_html=True)
+    left, right = st.columns([1, 1.7], gap="large")
 
     with left:
         st.markdown("<div class='login-card'>", unsafe_allow_html=True)
 
         if LOGO_B64:
-            st.markdown(img_html(LOGO_B64, style="width:240px; filter:brightness(1.4); margin-bottom:50px;"), unsafe_allow_html=True)
+            st.markdown(
+                img_html(LOGO_B64, style="width:230px; max-width:100%; filter:brightness(1.4); margin-bottom:30px;"),
+                unsafe_allow_html=True
+            )
         else:
             st.markdown("## KOENIG")
 
         st.markdown("""
-        <div style='border-top:1px solid rgba(255,255,255,.22); border-bottom:1px solid rgba(255,255,255,.22); padding:28px 0; margin-bottom:34px;'>
-            <div style='display:flex; align-items:center; gap:14px;'>
-                <div style='background:#1f6bff;height:46px;width:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;'>☻</div>
+        <div class='login-divider'>
+            <div class='login-brand-row'>
+                <div class='login-bot-icon'>☻</div>
                 <h1>Koenig Stride</h1>
             </div>
-            <p style='margin:14px 0 0 60px; font-weight:700;'>Tax & Entity Nexus Assistant</p>
+            <p class='login-tagline'>Tax &amp; Entity Nexus Assistant</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -522,7 +731,7 @@ def login_screen():
                     st.error(msg)
 
         st.markdown("""
-        <div style='border-top:1px solid rgba(255,255,255,.22); padding-top:28px; margin-top:60px; text-align:center;'>
+        <div class='login-help'>
             <b>❔ Need help?</b><br>
             <span>Contact your administrator for assistance.</span>
         </div>
@@ -531,16 +740,16 @@ def login_screen():
 
     with right:
         st.markdown("""
-        <div style='padding:48px 20px;'>
+        <div style='padding:36px 12px 18px 12px;'>
             <div class='brand-row'>
                 <div class='bot-icon'>☻</div>
                 <h1 class='brand-title'>Koenig Stride</h1>
             </div>
-            <div class='brand-subtitle'>Tax & Entity Nexus Assistant — Step Forward</div>
+            <div class='brand-subtitle'>Tax &amp; Entity Nexus Assistant — Step Forward</div>
         </div>
         """, unsafe_allow_html=True)
         st.markdown("""
-        <div class='hero'>
+        <div class='hero login-hero'>
             <h2>Welcome to Koenig Stride</h2>
             <p>Your secure internal assistant for tax, salary, entity and SPOC guidance.</p>
         </div>
