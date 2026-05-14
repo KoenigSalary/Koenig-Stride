@@ -1,8 +1,8 @@
-
 import streamlit as st
 import pandas as pd
 from pathlib import Path
 import base64
+import hashlib
 import numpy as np
 
 # Optional AI imports
@@ -15,8 +15,13 @@ except Exception:
     AI_AVAILABLE = False
 
 # =====================================================
-# KOENIG STRIDE - COMPLETE APP WITH LOGIN
-# Admin + Employee Login + Logo + Sarika + Blue UI + Chat
+# KOENIG STRIDE - AUTH V1
+# Admin + Employee Login
+# users.csv authentication
+# Default Employee Password: Welcome@123
+# First Login Password Change
+# Admin Password Change
+# Admin Employee Password Reset
 # =====================================================
 
 st.set_page_config(
@@ -34,6 +39,10 @@ BASE_DIR = Path(__file__).parent
 EXCEL_PATH = BASE_DIR / "knowledge" / "Koenig_VoiceBot_FAQ_Master.xlsx"
 LOGO_PATH = BASE_DIR / "assets" / "koenig_logo.png"
 SARIKA_PATH = BASE_DIR / "assets" / "sarika.png"
+USERS_PATH = BASE_DIR / "users.csv"
+
+DEFAULT_EMPLOYEE_PASSWORD = "Welcome@123"
+DEFAULT_ADMIN_PASSWORD = "admin123"
 
 # =====================================================
 # IMAGE BASE64
@@ -288,6 +297,28 @@ st.markdown("""
     color:var(--muted);
 }
 
+.login-box {
+    background:white;
+    padding:40px;
+    border-radius:24px;
+    box-shadow:0 14px 35px rgba(15,23,42,0.10);
+    margin-top:50px;
+    border:1px solid var(--border);
+}
+
+.login-title {
+    background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+    color:white;
+    padding:24px;
+    border-radius:18px;
+    margin-bottom:20px;
+}
+
+.login-title h1 {
+    margin:0;
+    font-size:32px;
+}
+
 .stButton > button {
     border-radius:14px !important;
     font-weight:800 !important;
@@ -338,28 +369,242 @@ div[data-testid="stExpander"] {
     .hero-graphic { display:none; }
     .avatar-img { width:200px; height:200px; }
 }
-
-.login-box {
-    background:white;
-    padding:40px;
-    border-radius:24px;
-    box-shadow:0 14px 35px rgba(15,23,42,0.10);
-    margin-top:50px;
-    border:1px solid var(--border);
-}
-.login-title {
-    background: linear-gradient(135deg, var(--blue-dark), var(--blue));
-    color:white;
-    padding:24px;
-    border-radius:18px;
-    margin-bottom:20px;
-}
-.login-title h1 {
-    margin:0;
-    font-size:32px;
-}
 </style>
 """, unsafe_allow_html=True)
+
+# =====================================================
+# PASSWORD + USER MANAGEMENT
+# =====================================================
+
+def hash_password(password):
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+def validate_password_strength(password):
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters."
+    if not any(c.isupper() for c in password):
+        return False, "Password must include at least one capital letter."
+    if not any(c.isdigit() for c in password):
+        return False, "Password must include at least one number."
+    if not any(not c.isalnum() for c in password):
+        return False, "Password must include at least one special character."
+    return True, ""
+
+def init_users_file():
+    if not USERS_PATH.exists():
+        df = pd.DataFrame([
+            {
+                "user_id": "admin",
+                "password_hash": hash_password(DEFAULT_ADMIN_PASSWORD),
+                "role": "Admin",
+                "first_login": False,
+                "active": True,
+                "display_name": "Admin"
+            }
+        ])
+        df.to_csv(USERS_PATH, index=False)
+
+def load_users():
+    init_users_file()
+    df = pd.read_csv(USERS_PATH, dtype=str).fillna("")
+    for col in ["user_id", "password_hash", "role", "first_login", "active", "display_name"]:
+        if col not in df.columns:
+            df[col] = ""
+    return df
+
+def save_users(df):
+    df.to_csv(USERS_PATH, index=False)
+
+def bool_from_str(value):
+    return str(value).strip().lower() in ["true", "1", "yes", "y"]
+
+def ensure_employee_exists(emp_id):
+    df = load_users()
+    emp_id = str(emp_id).strip()
+
+    if emp_id not in df["user_id"].astype(str).tolist():
+        new_row = pd.DataFrame([{
+            "user_id": emp_id,
+            "password_hash": hash_password(DEFAULT_EMPLOYEE_PASSWORD),
+            "role": "Employee",
+            "first_login": True,
+            "active": True,
+            "display_name": f"Employee {emp_id}"
+        }])
+        df = pd.concat([df, new_row], ignore_index=True)
+        save_users(df)
+
+def authenticate_user(user_id, password):
+    user_id = str(user_id).strip()
+    df = load_users()
+
+    match = df[df["user_id"].astype(str) == user_id]
+
+    if match.empty:
+        if user_id.isdigit():
+            ensure_employee_exists(user_id)
+            df = load_users()
+            match = df[df["user_id"].astype(str) == user_id]
+        else:
+            return False, "User not found.", None
+
+    row = match.iloc[0]
+
+    if not bool_from_str(row.get("active", "True")):
+        return False, "This user is inactive. Please contact admin.", None
+
+    if row["password_hash"] != hash_password(password):
+        return False, "Invalid password.", None
+
+    return True, "", row
+
+def update_user_password(user_id, new_password, first_login=False):
+    df = load_users()
+    idx = df[df["user_id"].astype(str) == str(user_id)].index
+
+    if len(idx) == 0:
+        return False
+
+    df.loc[idx, "password_hash"] = hash_password(new_password)
+    df.loc[idx, "first_login"] = bool(first_login)
+    save_users(df)
+    return True
+
+def reset_employee_password(emp_id):
+    ensure_employee_exists(emp_id)
+    return update_user_password(emp_id, DEFAULT_EMPLOYEE_PASSWORD, first_login=True)
+
+# =====================================================
+# SESSION STATE
+# =====================================================
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if "role" not in st.session_state:
+    st.session_state.role = None
+
+if "employee_id" not in st.session_state:
+    st.session_state.employee_id = None
+
+if "employee_name" not in st.session_state:
+    st.session_state.employee_name = None
+
+if "must_change_password" not in st.session_state:
+    st.session_state.must_change_password = False
+
+if "menu_open" not in st.session_state:
+    st.session_state.menu_open = False
+
+if "selected_module" not in st.session_state:
+    st.session_state.selected_module = None
+
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+# =====================================================
+# LOGIN + PASSWORD CHANGE
+# =====================================================
+
+def login_screen():
+    col1, col2, col3 = st.columns([1, 2, 1])
+
+    with col2:
+        if LOGO_B64:
+            st.markdown(
+                f"<div style='text-align:center; margin-bottom:20px;'><img src='data:image/png;base64,{LOGO_B64}' style='width:230px;'></div>",
+                unsafe_allow_html=True
+            )
+
+        st.markdown("<div class='login-box'>", unsafe_allow_html=True)
+
+        st.markdown("""
+        <div class='login-title'>
+            <h1>🔐 Koenig Stride Login</h1>
+            <p style='margin:6px 0 0 0;'>Tax & Entity Nexus Assistant</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        login_type = st.selectbox("Login As", ["Employee", "Admin"])
+
+        if login_type == "Employee":
+            user_id = st.text_input("Employee ID", placeholder="Example: 1001")
+            password = st.text_input("Password", type="password", placeholder="Default: Welcome@123")
+
+            if st.button("Employee Login", use_container_width=True):
+                if not user_id.strip().isdigit():
+                    st.error("Please enter a valid numeric Employee ID.")
+                elif not password:
+                    st.error("Please enter password.")
+                else:
+                    ok, msg, row = authenticate_user(user_id, password)
+                    if ok:
+                        st.session_state.logged_in = True
+                        st.session_state.role = "Employee"
+                        st.session_state.employee_id = user_id.strip()
+                        st.session_state.employee_name = row.get("display_name", f"Employee {user_id}")
+                        st.session_state.must_change_password = bool_from_str(row.get("first_login", "False"))
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+        else:
+            user_id = st.text_input("Admin Username", value="admin")
+            password = st.text_input("Password", type="password")
+
+            if st.button("Admin Login", use_container_width=True):
+                ok, msg, row = authenticate_user(user_id, password)
+                if ok and row.get("role") == "Admin":
+                    st.session_state.logged_in = True
+                    st.session_state.role = "Admin"
+                    st.session_state.employee_id = "admin"
+                    st.session_state.employee_name = row.get("display_name", "Admin")
+                    st.session_state.must_change_password = bool_from_str(row.get("first_login", "False"))
+                    st.rerun()
+                elif ok:
+                    st.error("This is not an admin account.")
+                else:
+                    st.error(msg)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+def force_password_change_screen():
+    col1, col2, col3 = st.columns([1, 2, 1])
+
+    with col2:
+        st.markdown("<div class='login-box'>", unsafe_allow_html=True)
+        st.markdown("## 🔐 Change Password Required")
+        st.info("For security, please change your default password before using Koenig Stride.")
+
+        new_password = st.text_input("New Password", type="password")
+        confirm_password = st.text_input("Confirm New Password", type="password")
+
+        if st.button("Update Password", use_container_width=True):
+            if not new_password or not confirm_password:
+                st.error("Please enter and confirm new password.")
+            elif new_password != confirm_password:
+                st.error("Passwords do not match.")
+            else:
+                ok, msg = validate_password_strength(new_password)
+                if not ok:
+                    st.error(msg)
+                elif new_password in [DEFAULT_EMPLOYEE_PASSWORD, DEFAULT_ADMIN_PASSWORD]:
+                    st.error("New password cannot be the default password.")
+                else:
+                    update_user_password(st.session_state.employee_id, new_password, first_login=False)
+                    st.session_state.must_change_password = False
+                    st.success("Password updated successfully.")
+                    st.rerun()
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+if not st.session_state.logged_in:
+    login_screen()
+    st.stop()
+
+if st.session_state.must_change_password:
+    force_password_change_screen()
+    st.stop()
 
 # =====================================================
 # LOAD KNOWLEDGE
@@ -429,30 +674,12 @@ def get_question_column(df):
     return None
 
 TAX_CATEGORIES = {
-    "advance tax",
-    "form 16",
-    "home loan & insurance",
-    "hra",
-    "income tax 2026",
-    "nps",
-    "penalty & delay",
-    "salary tax basics",
-    "sodexo / meal benefit",
-    "tax claim process",
-    "tax regime",
+    "advance tax", "form 16", "home loan & insurance", "hra",
+    "income tax 2026", "nps", "penalty & delay", "salary tax basics",
+    "sodexo / meal benefit", "tax claim process", "tax regime",
 }
-
-SALARY_CATEGORIES = {
-    "reimbursements",
-    "salary structure",
-}
-
-LABOUR_CATEGORIES = {
-    "labour code",
-    "labor code",
-    "labour codes",
-    "labor codes",
-}
+SALARY_CATEGORIES = {"reimbursements", "salary structure"}
+LABOUR_CATEGORIES = {"labour code", "labor code", "labour codes", "labor codes"}
 
 def get_module_for_row(row):
     source = normalize(safe_get(row, "Source"))
@@ -464,28 +691,20 @@ def get_module_for_row(row):
 
     if category in LABOUR_CATEGORIES or "labour code" in combined or "labor code" in combined:
         return "Labour Code"
-
     if category in SALARY_CATEGORIES:
         return "Salary Queries"
-
     if category in TAX_CATEGORIES:
         return "Tax FAQs"
-
     if "spoc" in combined or "contact" in combined or "who handles" in combined:
         return "SPOC Routing"
-
     if is_protected(row):
         return "Protected Information Routing"
-
     if "entity" in source or "entity" in combined:
         return "Entity Nexus"
-
     if any(x in combined for x in ["compliance", "tds", "gst", "filing", "return", "deduction", "80c", "80ccd"]):
         return "Compliance Support"
-
     if any(x in combined for x in ["salary", "payroll", "ctc", "reimbursement"]):
         return "Salary Queries"
-
     return "Tax FAQs"
 
 def add_module_column(df):
@@ -506,14 +725,7 @@ def get_categories_for_module(df, module):
 
     filtered = df[df["Main Module"] == module].copy()
     excluded = ["section mapping", "mapping", "section-mapping", ""]
-    categories = (
-        filtered[cat_col]
-        .dropna()
-        .astype(str)
-        .str.strip()
-        .unique()
-        .tolist()
-    )
+    categories = filtered[cat_col].dropna().astype(str).str.strip().unique().tolist()
     categories = [c for c in categories if c.lower() not in excluded]
     categories.sort(key=lambda x: x.lower())
     return categories
@@ -615,7 +827,6 @@ def semantic_search(query, top_k=3):
         results["similarity"] = sims[top_indices]
         return results
 
-    # fallback keyword search
     q = normalize(query)
     scores = []
     for _, row in faq_df.iterrows():
@@ -668,113 +879,14 @@ Knowledge Base:
     except Exception:
         return get_answer_text(top)
 
-# =====================================================
-# SESSION STATE
-# =====================================================
-
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
-if "role" not in st.session_state:
-    st.session_state.role = None
-
-if "employee_id" not in st.session_state:
-    st.session_state.employee_id = None
-
-if "employee_name" not in st.session_state:
-    st.session_state.employee_name = None
-
-if "menu_open" not in st.session_state:
-    st.session_state.menu_open = False
-
-if "selected_module" not in st.session_state:
-    st.session_state.selected_module = None
-
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
-# =====================================================
-# LOGIN SYSTEM
-# =====================================================
-
-ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "admin123"
-
-def login_screen():
-    col1, col2, col3 = st.columns([1, 2, 1])
-
-    with col2:
-        if LOGO_B64:
-            st.markdown(
-                f"<div style='text-align:center; margin-bottom:20px;'><img src='data:image/png;base64,{LOGO_B64}' style='width:230px;'></div>",
-                unsafe_allow_html=True
-            )
-
-        st.markdown("<div class='login-box'>", unsafe_allow_html=True)
-
-        st.markdown("""
-        <div class='login-title'>
-            <h1>🔐 Koenig Stride Login</h1>
-            <p style='margin:6px 0 0 0;'>Tax & Entity Nexus Assistant</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        login_type = st.selectbox("Login As", ["Employee", "Admin"])
-
-        if login_type == "Employee":
-            emp_id = st.text_input("Enter Employee ID", placeholder="Example: 1001")
-            employee_name = f"Employee {emp_id}" if emp_id.strip().isdigit() else ""
-
-            if st.button("Employee Login", use_container_width=True):
-                if emp_id.strip().isdigit():
-                    st.session_state.logged_in = True
-                    st.session_state.role = "Employee"
-                    st.session_state.employee_id = emp_id
-                    st.session_state.employee_name = employee_name
-                    st.rerun()
-                else:
-                    st.error("Please enter a valid numeric Employee ID")
-
-        else:
-            username = st.text_input("Admin Username")
-            password = st.text_input("Password", type="password")
-
-            if st.button("Admin Login", use_container_width=True):
-                if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-                    st.session_state.logged_in = True
-                    st.session_state.role = "Admin"
-                    st.session_state.employee_id = "ADMIN"
-                    st.session_state.employee_name = "Admin"
-                    st.rerun()
-                else:
-                    st.error("Invalid admin credentials")
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-if not st.session_state.logged_in:
-    login_screen()
-    st.stop()
-
-def logout():
-    st.session_state.logged_in = False
-    st.session_state.role = None
-    st.session_state.employee_id = None
-    st.session_state.employee_name = None
-    st.session_state.menu_open = False
-    st.session_state.selected_module = None
-    st.session_state.chat_history = []
-    st.rerun()
-
 def submit_query(query):
     results = semantic_search(query)
 
     if results.empty:
         st.session_state.chat_history.append({
-            "query": query,
-            "type": "not_found",
+            "query": query, "type": "not_found",
             "answer": "Knowledge base is not loaded.",
-            "similarity": 0,
-            "source": ""
+            "similarity": 0, "source": ""
         })
         return
 
@@ -783,42 +895,49 @@ def submit_query(query):
 
     if sim < 0.15:
         st.session_state.chat_history.append({
-            "query": query,
-            "type": "not_found",
+            "query": query, "type": "not_found",
             "answer": "I could not find a relevant answer. Please try differently or contact the relevant SPOC.",
-            "similarity": sim,
-            "source": safe_get(top, "Source")
+            "similarity": sim, "source": safe_get(top, "Source")
         })
         return
 
     if is_protected(top):
         spoc, email = get_spoc(top)
         st.session_state.chat_history.append({
-            "query": query,
-            "type": "protected",
+            "query": query, "type": "protected",
             "answer": "This information is protected and cannot be displayed here.",
-            "spoc": spoc,
-            "email": email,
-            "similarity": sim,
-            "source": safe_get(top, "Source")
+            "spoc": spoc, "email": email,
+            "similarity": sim, "source": safe_get(top, "Source")
         })
         return
 
     ans = generate_response(query, results)
     st.session_state.chat_history.append({
-        "query": query,
-        "type": "answer",
-        "answer": ans,
-        "similarity": sim,
+        "query": query, "type": "answer",
+        "answer": ans, "similarity": sim,
         "source": safe_get(top, "Source")
     })
+
+# =====================================================
+# LOGOUT
+# =====================================================
+
+def logout():
+    st.session_state.logged_in = False
+    st.session_state.role = None
+    st.session_state.employee_id = None
+    st.session_state.employee_name = None
+    st.session_state.must_change_password = False
+    st.session_state.menu_open = False
+    st.session_state.selected_module = None
+    st.session_state.chat_history = []
+    st.rerun()
 
 # =====================================================
 # TOP HEADER
 # =====================================================
 
 st.markdown("<div class='topbar'>", unsafe_allow_html=True)
-
 h1, h2, h3 = st.columns([1.3, 3.2, 1.2])
 
 with h1:
@@ -880,6 +999,33 @@ with left:
     st.markdown("<div class='online-box'>● Sarika is online</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
+    st.markdown("<div class='layout-card'>", unsafe_allow_html=True)
+    st.markdown("### 🔐 Account")
+    if st.button("Change My Password", use_container_width=True):
+        st.session_state.show_change_password = True
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if st.session_state.get("show_change_password", False):
+        with st.expander("Change My Password", expanded=True):
+            old_password = st.text_input("Current Password", type="password", key="old_pwd")
+            new_password = st.text_input("New Password", type="password", key="new_pwd")
+            confirm_password = st.text_input("Confirm Password", type="password", key="confirm_pwd")
+
+            if st.button("Update My Password", use_container_width=True):
+                ok, msg, row = authenticate_user(st.session_state.employee_id, old_password)
+                if not ok:
+                    st.error("Current password is incorrect.")
+                elif new_password != confirm_password:
+                    st.error("New password and confirm password do not match.")
+                else:
+                    valid, vmsg = validate_password_strength(new_password)
+                    if not valid:
+                        st.error(vmsg)
+                    else:
+                        update_user_password(st.session_state.employee_id, new_password, first_login=False)
+                        st.success("Password changed successfully.")
+                        st.session_state.show_change_password = False
+
 with right:
     st.markdown("""
     <div class="hero">
@@ -892,7 +1038,6 @@ with right:
     """, unsafe_allow_html=True)
 
     st.markdown("<div class='layout-card'>", unsafe_allow_html=True)
-    st.markdown("<div class='ask-title'>🚀 Start Here</div>", unsafe_allow_html=True)
     st.markdown("<div class='info-box'>Click Start Here to open guided help categories.</div>", unsafe_allow_html=True)
 
     if st.button("🚀 Start Here", use_container_width=True):
@@ -980,7 +1125,10 @@ with right:
                 </div>
                 """, unsafe_allow_html=True)
             else:
-                meta = f"<br><br><span class='small-text'>Source: {item.get('source','')} | Similarity: {item.get('similarity',0):.2f}</span>" if st.session_state.role == "Admin" else ""
+                if st.session_state.role == "Admin":
+                    meta = f"<br><br><span class='small-text'>Source: {item.get('source','')} | Similarity: {item.get('similarity',0):.2f}</span>"
+                else:
+                    meta = ""
                 st.markdown(f"""
                 <div class='bot-bubble'>
                 <b>Koenig Stride:</b><br>
@@ -992,10 +1140,27 @@ with right:
         st.markdown("</div>", unsafe_allow_html=True)
 
 # =====================================================
-# ADMIN PREVIEW
+# ADMIN ONLY PANEL
 # =====================================================
 
 if st.session_state.role == "Admin":
+
+    with st.expander("Admin Panel: User Management"):
+        st.markdown("### Reset Employee Password")
+        reset_emp_id = st.text_input("Employee ID to reset", placeholder="Example: 1001")
+        if st.button("Reset Employee Password to Welcome@123"):
+            if reset_emp_id.strip().isdigit():
+                reset_employee_password(reset_emp_id.strip())
+                st.success(f"Password reset for Employee {reset_emp_id}. They must change it on next login.")
+            else:
+                st.error("Please enter a numeric Employee ID.")
+
+        st.markdown("---")
+        st.markdown("### Users")
+        users_df = load_users()
+        display_df = users_df[["user_id", "role", "first_login", "active", "display_name"]].copy()
+        st.dataframe(display_df, use_container_width=True)
+
     with st.expander("Admin Preview: Knowledge Base"):
         if not faq_df.empty:
             st.success(f"Knowledge base loaded successfully. Total records: {len(faq_df)}")
@@ -1006,10 +1171,11 @@ if st.session_state.role == "Admin":
 
     with st.expander("Admin Preview: Semantic Match Test"):
         test_query = st.text_input("Test semantic matching", placeholder="Example: UAE finance SPOC")
-        if st.button("Run Match Test") and test_query.strip():
-            test_results = semantic_search(test_query.strip())
-            if not test_results.empty:
-                cols = [c for c in ["Question", "Source", "Protected", "SPOC Name", "SPOC Email", "similarity"] if c in test_results.columns]
-                st.dataframe(test_results[cols], use_container_width=True)
+        if st.button("Run Match Test"):
+            if test_query.strip():
+                test_results = semantic_search(test_query.strip())
+                if not test_results.empty:
+                    cols = [c for c in ["Question", "Source", "Protected", "SPOC Name", "SPOC Email", "similarity"] if c in test_results.columns]
+                    st.dataframe(test_results[cols], use_container_width=True)
 
 st.caption("Koenig Stride · Internal Tax & Entity Nexus Assistant")
