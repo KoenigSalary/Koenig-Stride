@@ -2689,20 +2689,29 @@ def logout():
 def init_employee_master_table():
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("PRAGMA table_info(employee_master)")
-    existing_cols = [row[1] for row in cur.fetchall()]
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS employee_master (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id TEXT UNIQUE,
+            employee_name TEXT,
+            tax_regime TEXT,
+            pan_no TEXT,
+            gender TEXT,
+            date_of_joining TEXT,
+            date_of_exit TEXT,
+            dob TEXT,
+            designation TEXT,
+            uploaded_at TEXT
+        )
+    """)
 
     required_columns = {
         "email": "TEXT",
-        "pan_no": "TEXT",
-        "gender": "TEXT",
-        "dob": "TEXT",
         "doj": "TEXT",
         "doe": "TEXT",
-        "designation": "TEXT",
         "department": "TEXT",
         "branch": "TEXT",
-        "tax_regime": "TEXT",
         "annual_salary": "REAL DEFAULT 0",
         "monthly_salary": "REAL DEFAULT 0",
         "basic_percent": "REAL DEFAULT 50",
@@ -2712,37 +2721,16 @@ def init_employee_master_table():
         "created_at": "TEXT",
         "updated_at": "TEXT"
     }
+
+    cur.execute("PRAGMA table_info(employee_master)")
+    existing_cols = [row[1] for row in cur.fetchall()]
 
     for col, col_type in required_columns.items():
         if col not in existing_cols:
-            cur.execute(
-                f"ALTER TABLE employee_master ADD COLUMN {col} {col_type}"
-            )
+            cur.execute(f"ALTER TABLE employee_master ADD COLUMN {col} {col_type}")
 
     conn.commit()
     conn.close()
-    
-    cur.execute("PRAGMA table_info(employee_master)")
-    existing_cols = [row[1] for row in cur.fetchall()]
-    extra_cols = {
-        "email": "TEXT",
-        "department": "TEXT",
-        "branch": "TEXT",
-        "annual_salary": "REAL DEFAULT 0",
-        "monthly_salary": "REAL DEFAULT 0",
-        "basic_percent": "REAL DEFAULT 50",
-        "status": "TEXT DEFAULT 'Active'",
-        "upload_month": "TEXT",
-        "tax_year": "TEXT",
-        "created_at": "TEXT",
-        "updated_at": "TEXT"
-    }
-    for col, definition in extra_cols.items():
-        if col not in existing_cols:
-            cur.execute(f"ALTER TABLE employee_master ADD COLUMN {col} {definition}")
-    conn.commit()
-    conn.close()
-
 
 def normalize_employee_master_columns(df):
     aliases = {
