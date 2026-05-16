@@ -1508,13 +1508,14 @@ def seed_salary_structure_master():
     default_rows = [
         ("Basic", "Salary Component", "Manual / Upload", 0, 0, "Monthly", "Taxable", 0, 1, 1, "Base salary component"),
         ("HRA", "Allowance", "50% of Basic", 50, 0, "Monthly", "Partial", 0, 1, 2, "HRA = 50% of Basic"),
-        ("Sodexo / Meal Passes", "Reimbursement", "Fixed", 0, 105600, "Yearly", "Exempt", 0, 1, 3, "Editable yearly meal pass limit"),
+        ("Sodexo / Meal Passes", "Reimbursement", "Fixed", 0, 105600, "Yearly", "Conditional", 1, 1, 3, "Part of CTC; exempt up to approved declaration/proof amount"),
         ("Telephone / Internet", "Reimbursement", "Percentage", 3, 0, "Yearly", "Conditional", 1, 1, 4, "Exempt up to approved proof amount"),
         ("Electricity Reimbursement", "Reimbursement", "Percentage", 3, 0, "Yearly", "Conditional", 1, 1, 5, "Exempt up to approved proof amount"),
         ("Professional / Software", "Reimbursement", "Percentage", 2, 0, "Yearly", "Conditional", 1, 1, 6, "Exempt up to approved proof amount"),
         ("Skill Development", "Reimbursement", "Percentage", 2, 0, "Yearly", "Conditional", 1, 1, 7, "Exempt up to approved proof amount"),
         ("Power & Utility Allowance", "Allowance", "Percentage", 2, 0, "Yearly", "Conditional", 1, 1, 8, "Exempt up to approved proof amount"),
         ("Taxable Allowance", "Allowance", "Balance", 0, 0, "Monthly", "Taxable", 0, 1, 9, "Balance after configured components"),
+        ("Meal Passes / Sodexo Declaration", "Deduction", "Fixed", 0, 105600, "Yearly", "Conditional", 1, 1, 10, "Employee declaration/deduction head for meal passes; editable"),
     ]
 
     for row in default_rows:
@@ -1647,12 +1648,20 @@ def save_salary_structure_master(df):
 
 
 def calculate_salary_split(annual_salary, basic_percent=40):
+    """
+    Auto salary split using salary_structure_master.
+
+    Important logic:
+    - Sodexo / Meal Passes is part of CTC.
+    - Deduction-type components like Meal Passes / Sodexo Declaration are not added to CTC breakup.
+    - Taxable Allowance is the balancing figure so total salary components equal Annual Salary / CTC.
+    """
     structure_df = load_salary_structure_master()
     annual_salary = float(annual_salary or 0)
     basic = round(annual_salary * basic_percent / 100, 2)
 
     result = {
-        "Annual Salary": annual_salary,
+        "Annual Salary / CTC": annual_salary,
         "Basic": basic,
         "HRA": 0,
         "Sodexo / Meal Passes": 0,
@@ -1662,41 +1671,71 @@ def calculate_salary_split(annual_salary, basic_percent=40):
         "Skill Development": 0,
         "Power & Utility Allowance": 0,
         "Taxable Allowance": 0,
-        "Total Configured Components": 0,
+        "Total Salary Components": 0,
+        "Meal Passes / Sodexo Declaration": 0,
     }
+
+    ctc_components = set([
+        "Basic",
+        "HRA",
+        "Sodexo / Meal Passes",
+        "Telephone / Internet",
+        "Electricity Reimbursement",
+        "Professional / Software",
+        "Skill Development",
+        "Power & Utility Allowance",
+        "Taxable Allowance",
+    ])
 
     for _, row in structure_df.iterrows():
         if int(row.get("enabled", 1)) != 1:
             continue
 
         component = str(row.get("component_name", "")).strip()
+        component_type = str(row.get("component_type", "")).strip().lower()
         formula_type = str(row.get("formula_type", "")).strip().lower()
         percentage = float(row.get("percentage", 0) or 0)
         max_limit = float(row.get("max_limit", 0) or 0)
 
+        # Deduction/investment declaration heads are tracked separately;
+        # they should not increase CTC breakup.
+        if component_type == "deduction":
+            if component == "Meal Passes / Sodexo Declaration":
+                result[component] = round(max_limit, 2)
+            continue
+
         if component == "Basic":
             result[component] = basic
+
         elif component == "HRA":
             result[component] = round(basic * percentage / 100, 2)
+
         elif component == "Taxable Allowance":
             continue
+
         elif formula_type == "fixed":
             result[component] = round(max_limit, 2)
+
         elif formula_type == "percentage":
             calculated = annual_salary * percentage / 100
             if max_limit > 0:
                 calculated = min(calculated, max_limit)
             result[component] = round(calculated, 2)
+
         elif formula_type == "50% of basic":
             result[component] = round(basic * percentage / 100, 2)
 
-    component_total = sum(
-        v for k, v in result.items()
-        if k not in ["Annual Salary", "Taxable Allowance", "Total Configured Components"]
+    component_total_before_taxable = sum(
+        amount for comp, amount in result.items()
+        if comp in ctc_components and comp != "Taxable Allowance"
     )
 
-    result["Total Configured Components"] = round(component_total, 2)
-    result["Taxable Allowance"] = round(max(annual_salary - component_total, 0), 2)
+    result["Taxable Allowance"] = round(max(annual_salary - component_total_before_taxable, 0), 2)
+
+    result["Total Salary Components"] = round(
+        sum(amount for comp, amount in result.items() if comp in ctc_components),
+        2
+    )
 
     return result
 
@@ -1704,6 +1743,12 @@ def calculate_salary_split(annual_salary, basic_percent=40):
 def render_salary_structure_master_panel():
     st.markdown("### 💼 Salary Structure Master")
     st.caption("Edit Sodexo, HRA, reimbursements, allowances, proof rules and taxable status.")
+
+    st.info(
+        "Sodexo / Meal Passes is treated as part of CTC. "
+        "Meal Passes / Sodexo Declaration is also available as a separate editable deduction/declaration head. "
+        "Exemption will be considered only up to approved proof/declaration amount."
+    )
 
     structure_df = load_salary_structure_master()
 
@@ -1844,11 +1889,11 @@ def import_employee_master(df):
     return count, ""
 
 
-def import_salary_monthly(df, financial_year, salary_month, mode):
+def import_salary_monthly(df, tax_year, salary_month, mode):
     init_payroll_database()
     emp_id_col = find_column(df, ["Employee ID", "EmployeeID", "Emp ID", "EmpCode"])
     emp_name_col = find_column(df, ["Employee Name", "Name", "Emp Name"])
-    gross_col = find_column(df, ["Gross Salary", "Gross", "Salary", "Annual Salary", "CTC"])
+    gross_col = find_column(df, ["Gross Salary", "Gross", "Salary", "Annual Salary / CTC", "CTC"])
     basic_col = find_column(df, ["Basic", "Basic Salary"])
     hra_col = find_column(df, ["HRA"])
     sodexo_col = find_column(df, ["Sodexo", "Meal Passes", "Meal Passess"])
@@ -1876,7 +1921,7 @@ def import_salary_monthly(df, financial_year, salary_month, mode):
     if mode == "Overwrite Month":
         cur.execute(
             "DELETE FROM employee_salary_monthly WHERE financial_year = ? AND salary_month = ?",
-            (financial_year, salary_month)
+            (tax_year, salary_month)
         )
 
     count = 0
@@ -1899,7 +1944,7 @@ def import_salary_monthly(df, financial_year, salary_month, mode):
         """, (
             employee_id,
             text_value(row, emp_name_col),
-            financial_year,
+            tax_year,
             salary_month,
             money_value(row, gross_col),
             money_value(row, basic_col),
@@ -1928,7 +1973,7 @@ def import_salary_monthly(df, financial_year, salary_month, mode):
     return count, ""
 
 
-def import_tds_monthly(df, financial_year, salary_month, mode):
+def import_tds_monthly(df, tax_year, salary_month, mode):
     init_payroll_database()
     emp_id_col = find_column(df, ["Employee ID", "EmployeeID", "Emp ID", "EmpCode"])
     emp_name_col = find_column(df, ["Employee Name", "Name", "Emp Name"])
@@ -1948,7 +1993,7 @@ def import_tds_monthly(df, financial_year, salary_month, mode):
     if mode == "Overwrite Month":
         cur.execute(
             "DELETE FROM employee_tds_monthly WHERE financial_year = ? AND salary_month = ?",
-            (financial_year, salary_month)
+            (tax_year, salary_month)
         )
 
     count = 0
@@ -1968,7 +2013,7 @@ def import_tds_monthly(df, financial_year, salary_month, mode):
         """, (
             employee_id,
             text_value(row, emp_name_col),
-            financial_year,
+            tax_year,
             salary_month,
             money_value(row, tds_col),
             money_value(row, tax1_col),
@@ -1997,7 +2042,7 @@ def render_payroll_upload_engine():
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        financial_year = st.text_input("Financial Year", value="2025-26")
+        financial_year = st.text_input("Tax Year", value="2026-27")
     with c2:
         salary_month = st.selectbox(
             "Month",
@@ -2030,9 +2075,9 @@ def render_payroll_upload_engine():
                 if upload_type == "Employee Master":
                     count, err = import_employee_master(upload_df)
                 elif upload_type == "Salary Computation":
-                    count, err = import_salary_monthly(upload_df, financial_year, salary_month, mode)
+                    count, err = import_salary_monthly(upload_df, tax_year, salary_month, mode)
                 else:
-                    count, err = import_tds_monthly(upload_df, financial_year, salary_month, mode)
+                    count, err = import_tds_monthly(upload_df, tax_year, salary_month, mode)
 
                 if err:
                     st.error(err)
@@ -2103,6 +2148,7 @@ def render_tax_output_fields():
         {"Field": "Total Income from Salary", "Meaning": "Annual salary income before deductions"},
         {"Field": "Approved Allowances / Reimbursements", "Meaning": "Only approved proof-based exemptions"},
         {"Field": "Standard Deduction", "Meaning": "As per applicable regime/rules"},
+        {"Field": "Meal Passes / Sodexo Declaration", "Meaning": "Editable deduction/declaration head; exemption subject to approved amount"},
         {"Field": "Approved Investments", "Meaning": "Only approved employee declarations/proofs"},
         {"Field": "Home Loan Deduction", "Meaning": "Approved home loan interest"},
         {"Field": "Other Eligible Deductions", "Meaning": "Other approved deductions"},
