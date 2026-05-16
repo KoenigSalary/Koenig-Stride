@@ -708,6 +708,7 @@ defaults = {
     "chat_history": [],
     "show_change_password": False,
     "selected_panel": "Home",
+    "start_completed": False,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -2621,6 +2622,8 @@ def logout():
 
 def set_panel(panel_name):
     st.session_state.selected_panel = panel_name
+    if panel_name == "Start Here":
+        st.session_state.start_completed = True
 
 def panel_button(label, panel_name):
     active = st.session_state.get("selected_panel", "Home") == panel_name
@@ -2680,21 +2683,38 @@ with left:
     panel_button("🏠 Home", "Home")
     panel_button("🚀 Start Here", "Start Here")
     panel_button("👤 Account", "Account")
-    panel_button("🧾 Employee Declaration", "Employee Declaration")
-    panel_button("📊 My Tax Snapshot", "My Tax Snapshot")
-    panel_button("💬 Ask Sarika", "Ask Sarika")
 
-    if st.session_state.role == "Admin":
+    if st.session_state.get("start_completed", False):
         st.markdown("---")
-        st.markdown("### 🛠️ Admin")
-        panel_button("💼 Payroll & Tax Engine", "Payroll Tax Engine")
-        panel_button("✅ Declaration Approval", "Declaration Approval")
-        panel_button("👥 User Management", "User Management")
-        panel_button("📚 Knowledge Base", "Knowledge Base")
-        panel_button("📈 Admin Analytics", "Admin Analytics")
+        st.markdown("### 🤖 Assistant")
+        panel_button("💬 Ask Sarika", "Ask Sarika")
+
+        st.markdown("---")
+        st.markdown("### 🧾 Employee Tax")
+        panel_button("🧾 Employee Declaration", "Employee Declaration")
+        panel_button("📊 My Tax Snapshot", "My Tax Snapshot")
+
+        if st.session_state.role == "Admin":
+            st.markdown("---")
+            st.markdown("### 🛠️ Admin")
+            panel_button("💼 Payroll & Tax Engine", "Payroll Tax Engine")
+            panel_button("✅ Declaration Approval", "Declaration Approval")
+            panel_button("👥 User Management", "User Management")
+            panel_button("📚 Knowledge Base", "Knowledge Base")
+            panel_button("📈 Admin Analytics", "Admin Analytics")
 
 with right:
     selected_panel = st.session_state.get("selected_panel", "Home")
+
+    locked_panels = [
+        "Ask Sarika", "Employee Declaration", "My Tax Snapshot",
+        "Payroll Tax Engine", "Declaration Approval", "User Management",
+        "Knowledge Base", "Admin Analytics"
+    ]
+
+    if selected_panel in locked_panels and not st.session_state.get("start_completed", False):
+        selected_panel = "Home"
+        st.session_state.selected_panel = "Home"
 
     # =====================================================
     # HOME PANEL
@@ -2712,7 +2732,12 @@ with right:
     # START HERE PANEL
     # =====================================================
     elif selected_panel == "Start Here":
+        st.session_state.start_completed = True
         st.markdown("## 🚀 Start Here")
+        st.success("Assistant panels are now available in the left sidebar, including Ask Sarika.")
+        if st.button("💬 Open Ask Sarika", use_container_width=True):
+            st.session_state.selected_panel = "Ask Sarika"
+            st.rerun()
         st.markdown("Select an area below, then choose a category and question.")
 
         st.markdown("<div class='card'>", unsafe_allow_html=True)
@@ -2807,7 +2832,10 @@ with right:
         st.markdown("## 💬 Ask Sarika")
 
         with st.expander("🎙️ Voice Sarika", expanded=False):
-            render_voice_sarika_panel()
+            if "render_voice_sarika_panel" in globals():
+                render_voice_sarika_panel()
+            else:
+                st.info("Voice Sarika is not available in this build. Please use the text box below.")
 
         st.markdown("### Ask by typing")
         with st.form("ask_form", clear_on_submit=True):
