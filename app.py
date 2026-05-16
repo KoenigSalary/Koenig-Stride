@@ -3,6 +3,8 @@ import pandas as pd
 from pathlib import Path
 import base64
 import hashlib
+import re
+import uuid
 from datetime import datetime
 import sqlite3
 import numpy as np
@@ -33,6 +35,8 @@ LOGO_PATH = BASE_DIR / "assets" / "koenig_logo.png"
 SARIKA_PATH = BASE_DIR / "assets" / "sarika.png"
 USERS_PATH = BASE_DIR / "users.csv"
 DB_PATH = BASE_DIR / "koenig_stride.db"
+PROOF_FOLDER = BASE_DIR / "proof_uploads"
+PROOF_FOLDER.mkdir(exist_ok=True)
 
 DEFAULT_EMPLOYEE_PASSWORD = "Welcome@123"
 DEFAULT_ADMIN_PASSWORD = "admin123"
@@ -901,16 +905,6 @@ def login_screen():
             <p>Your secure internal assistant for tax, salary, entity and SPOC guidance.</p>
         </div>
         """, unsafe_allow_html=True)
-
-        # 4. Sarika photo
-        if SARIKA_B64:
-            st.markdown(f"""
-            <div class='sarika-wrap'>
-                <img src='data:image/png;base64,{SARIKA_B64}'>
-                <div class='sarika-caption'>👩‍💼 Sarika</div>
-                <div class='sarika-online'>● Sarika is online</div>
-            </div>
-            """, unsafe_allow_html=True)
 
         # 5. Login form
         st.markdown("<div class='login-form-card'>", unsafe_allow_html=True)
@@ -2190,6 +2184,292 @@ def render_payroll_tax_engine_panel():
 init_payroll_database()
 
 
+
+# =====================================================
+# EMPLOYEE DECLARATION + APPROVAL FLOW
+# =====================================================
+
+def ensure_declaration_columns():
+    """Upgrade employee_investments safely if older DB exists."""
+    init_payroll_database()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(employee_investments)")
+    existing = [row[1] for row in cur.fetchall()]
+    add_cols = {
+        "tax_regime": "TEXT DEFAULT ''",
+        "previous_employer_income": "REAL DEFAULT 0",
+        "previous_employer_tds": "REAL DEFAULT 0",
+        "eligible_limit": "REAL DEFAULT 0",
+        "excess_amount": "REAL DEFAULT 0",
+    }
+    for col, definition in add_cols.items():
+        if col not in existing:
+            cur.execute(f"ALTER TABLE employee_investments ADD COLUMN {col} {definition}")
+    conn.commit()
+    conn.close()
+
+
+def get_declaration_sections():
+    return [
+        "80C", "80D", "NPS 80CCD(1B)", "Employer NPS 80CCD(2)",
+        "HRA", "Home Loan Interest", "LTA", "Donation",
+        "Meal Passes / Sodexo Declaration",
+        "Telephone / Internet", "Electricity Reimbursement", "Professional / Software",
+        "Skill Development", "Power & Utility Allowance",
+        "Form 12B / 12BB", "Previous Employer Income", "Other Deduction",
+    ]
+
+
+def get_section_default_limit(section):
+    limits = {
+        "80C": 150000, "80D": 25000, "NPS 80CCD(1B)": 50000,
+        "Employer NPS 80CCD(2)": 0, "HRA": 0, "Home Loan Interest": 200000,
+        "LTA": 0, "Donation": 0, "Meal Passes / Sodexo Declaration": 105600,
+        "Telephone / Internet": 0, "Electricity Reimbursement": 0,
+        "Professional / Software": 0, "Skill Development": 0,
+        "Power & Utility Allowance": 0, "Form 12B / 12BB": 0,
+        "Previous Employer Income": 0, "Other Deduction": 0,
+    }
+    try:
+        structure_df = load_salary_structure_master()
+        match = structure_df[structure_df["component_name"].astype(str).str.strip().str.lower() == section.strip().lower()]
+        if not match.empty:
+            value = float(match.iloc[0].get("max_limit", 0) or 0)
+            if value > 0:
+                return value
+    except Exception:
+        pass
+    return limits.get(section, 0)
+
+
+def save_uploaded_proof(uploaded_file, employee_id, section):
+    if uploaded_file is None:
+        return ""
+    safe_section = re.sub(r"[^A-Za-z0-9]+", "_", section).strip("_")
+    ext = Path(uploaded_file.name).suffix
+    file_name = f"{employee_id}_{safe_section}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}{ext}"
+    file_path = PROOF_FOLDER / file_name
+    with open(file_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    return str(file_path)
+
+
+def submit_employee_declaration(employee_id, employee_name, tax_year, tax_regime, declaration_type, section, investment_type, claimed_amount, eligible_limit, proof_file_path, employee_remarks, previous_employer_income=0, previous_employer_tds=0):
+    ensure_declaration_columns()
+    claimed_amount = float(claimed_amount or 0)
+    eligible_limit = float(eligible_limit or 0)
+    excess_amount = max(claimed_amount - eligible_limit, 0) if eligible_limit > 0 else 0
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO employee_investments (
+            employee_id, employee_name, financial_year, tax_regime,
+            declaration_type, section, investment_type,
+            claimed_amount, approved_amount, eligible_limit, excess_amount,
+            status, proof_file, employee_remarks,
+            previous_employer_income, previous_employer_tds,
+            submitted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        employee_id, employee_name, tax_year, tax_regime,
+        declaration_type, section, investment_type,
+        claimed_amount, 0, eligible_limit, excess_amount,
+        "Pending", proof_file_path, employee_remarks,
+        float(previous_employer_income or 0), float(previous_employer_tds or 0),
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ))
+    conn.commit()
+    conn.close()
+
+
+def load_employee_declarations(employee_id=None):
+    ensure_declaration_columns()
+    conn = get_db_connection()
+    if employee_id:
+        df = pd.read_sql_query("SELECT * FROM employee_investments WHERE employee_id = ? ORDER BY submitted_at DESC", conn, params=(str(employee_id),))
+    else:
+        df = pd.read_sql_query("SELECT * FROM employee_investments ORDER BY submitted_at DESC", conn)
+    conn.close()
+    return df.fillna("")
+
+
+def update_declaration_status(row_id, status, approved_amount, admin_remarks, approved_by):
+    ensure_declaration_columns()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE employee_investments
+        SET status = ?, approved_amount = ?, admin_remarks = ?, approved_by = ?, approved_at = ?
+        WHERE id = ?
+    """, (status, float(approved_amount or 0), admin_remarks, approved_by, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), int(row_id)))
+    conn.commit()
+    conn.close()
+
+
+def delete_declaration(row_id):
+    ensure_declaration_columns()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM employee_investments WHERE id = ?", (int(row_id),))
+    conn.commit()
+    conn.close()
+
+
+def render_employee_declaration_portal():
+    st.markdown("### 🧾 Employee Declaration Portal")
+    st.caption("Submit investment proofs, reimbursements, Meal Passes/Sodexo, and Form 12B/12BB.")
+    employee_id = str(st.session_state.employee_id)
+    employee_name = str(st.session_state.employee_name or f"Employee {employee_id}")
+    c1, c2 = st.columns(2)
+    with c1:
+        tax_year = st.text_input("Tax Year", value="2026-27", key="emp_decl_tax_year")
+    with c2:
+        tax_regime = st.selectbox("Tax Regime", ["New", "Old"], key="emp_decl_tax_regime")
+    st.markdown("---")
+    declaration_type = st.selectbox("Declaration Type", ["Investment", "Reimbursement", "Allowance", "Form 12B / 12BB", "Previous Employer", "Other"], key="emp_decl_type")
+    section = st.selectbox("Section / Component", get_declaration_sections(), key="emp_decl_section")
+    eligible_limit = get_section_default_limit(section)
+    c1, c2 = st.columns(2)
+    with c1:
+        investment_type = st.text_input("Investment / Claim Type", value=section, key="emp_decl_inv_type")
+    with c2:
+        edited_limit = st.number_input("Eligible Limit", value=float(eligible_limit or 0), min_value=0.0, step=1000.0, key="emp_decl_limit")
+    c3, c4 = st.columns(2)
+    with c3:
+        claimed_amount = st.number_input("Claimed Amount", min_value=0.0, step=1000.0, key="emp_decl_claimed_amount")
+    with c4:
+        if edited_limit > 0 and claimed_amount > edited_limit:
+            st.warning(f"Claim exceeds eligible limit by ₹{claimed_amount - edited_limit:,.2f}")
+        else:
+            st.success("Within configured limit")
+    previous_employer_income = 0.0
+    previous_employer_tds = 0.0
+    if section in ["Form 12B / 12BB", "Previous Employer Income"] or declaration_type in ["Form 12B / 12BB", "Previous Employer"]:
+        st.markdown("#### Previous Employer / Form 12B-12BB Details")
+        p1, p2 = st.columns(2)
+        with p1:
+            previous_employer_income = st.number_input("Previous Employer Income", min_value=0.0, step=1000.0, key="previous_employer_income")
+        with p2:
+            previous_employer_tds = st.number_input("Previous Employer TDS", min_value=0.0, step=1000.0, key="previous_employer_tds")
+    uploaded_file = st.file_uploader("Upload Proof / Document", type=["pdf", "jpg", "jpeg", "png", "xlsx", "xls"], key="emp_decl_proof")
+    employee_remarks = st.text_area("Employee Remarks", placeholder="Mention bill period, previous employer name, etc.", key="emp_decl_remarks")
+    if st.button("📤 Submit Declaration", use_container_width=True):
+        proof_path = save_uploaded_proof(uploaded_file, employee_id, section)
+        submit_employee_declaration(employee_id, employee_name, tax_year, tax_regime, declaration_type, section, investment_type, claimed_amount, edited_limit, proof_path, employee_remarks, previous_employer_income, previous_employer_tds)
+        st.success("Declaration submitted successfully for approval.")
+        st.rerun()
+    st.markdown("---")
+    st.markdown("### My Declaration Status")
+    my_df = load_employee_declarations(employee_id)
+    if my_df.empty:
+        st.info("No declarations submitted yet.")
+    else:
+        show_cols = ["financial_year", "tax_regime", "declaration_type", "section", "investment_type", "claimed_amount", "eligible_limit", "excess_amount", "approved_amount", "status", "employee_remarks", "admin_remarks", "submitted_at", "approved_at"]
+        show_cols = [c for c in show_cols if c in my_df.columns]
+        st.dataframe(my_df[show_cols], use_container_width=True, hide_index=True)
+        approved = pd.to_numeric(my_df.get("approved_amount", 0), errors="coerce").fillna(0).sum()
+        pending = pd.to_numeric(my_df[my_df["status"] == "Pending"].get("claimed_amount", 0), errors="coerce").fillna(0).sum()
+        rejected = pd.to_numeric(my_df[my_df["status"] == "Rejected"].get("claimed_amount", 0), errors="coerce").fillna(0).sum()
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Approved Amount", f"₹{approved:,.0f}")
+        m2.metric("Pending Amount", f"₹{pending:,.0f}")
+        m3.metric("Rejected Amount", f"₹{rejected:,.0f}")
+
+
+def render_admin_declaration_approval_panel():
+    st.markdown("### ✅ Investment / Declaration Approval Panel")
+    st.caption("Approve/reject employee investments, reimbursements, Meal Passes/Sodexo, and Form 12B/12BB.")
+    df = load_employee_declarations()
+    if df.empty:
+        st.info("No employee declarations submitted yet.")
+        return
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        status_filter = st.selectbox("Status", ["All", "Pending", "Approved", "Rejected"], key="admin_decl_status_filter")
+    with c2:
+        section_filter = st.selectbox("Section", ["All"] + sorted(df["section"].astype(str).dropna().unique().tolist()), key="admin_decl_section_filter")
+    with c3:
+        employee_filter = st.text_input("Employee ID / Name", key="admin_decl_employee_filter")
+    filtered = df.copy()
+    if status_filter != "All":
+        filtered = filtered[filtered["status"] == status_filter]
+    if section_filter != "All":
+        filtered = filtered[filtered["section"] == section_filter]
+    if employee_filter.strip():
+        q = employee_filter.strip().lower()
+        filtered = filtered[filtered["employee_id"].astype(str).str.lower().str.contains(q) | filtered["employee_name"].astype(str).str.lower().str.contains(q)]
+    display_cols = ["id", "employee_id", "employee_name", "financial_year", "tax_regime", "declaration_type", "section", "investment_type", "claimed_amount", "eligible_limit", "excess_amount", "approved_amount", "status", "employee_remarks", "admin_remarks", "submitted_at", "approved_at"]
+    display_cols = [c for c in display_cols if c in filtered.columns]
+    st.dataframe(filtered[display_cols], use_container_width=True, hide_index=True)
+    st.markdown("---")
+    row_ids = filtered["id"].astype(int).tolist()
+    if not row_ids:
+        st.info("No matching declarations.")
+        return
+    selected_id = st.selectbox("Select Declaration ID", row_ids, key="approval_selected_id")
+    selected_row = filtered[filtered["id"] == selected_id].iloc[0]
+    a1, a2, a3 = st.columns(3)
+    with a1:
+        st.write(f"**Employee:** {selected_row.get('employee_id', '')} - {selected_row.get('employee_name', '')}")
+        st.write(f"**Section:** {selected_row.get('section', '')}")
+    with a2:
+        st.write(f"**Claimed:** ₹{float(selected_row.get('claimed_amount', 0) or 0):,.2f}")
+        st.write(f"**Eligible Limit:** ₹{float(selected_row.get('eligible_limit', 0) or 0):,.2f}")
+    with a3:
+        proof_path = str(selected_row.get("proof_file", "") or "")
+        if proof_path:
+            try:
+                with open(proof_path, "rb") as f:
+                    st.download_button("Download Proof", f.read(), file_name=Path(proof_path).name, use_container_width=True)
+            except Exception:
+                st.warning("Proof file not accessible.")
+        else:
+            st.write("**Proof:** Not uploaded")
+    approved_amount = st.number_input("Approved Amount", min_value=0.0, step=1000.0, value=float(selected_row.get("claimed_amount", 0) or 0), key="approval_amount")
+    admin_remarks = st.text_area("Admin Remarks", value=str(selected_row.get("admin_remarks", "") or ""), key="approval_remarks")
+    b1, b2, b3 = st.columns(3)
+    with b1:
+        if st.button("✅ Approve", use_container_width=True):
+            update_declaration_status(selected_id, "Approved", approved_amount, admin_remarks, st.session_state.employee_name or "Admin")
+            st.success("Declaration approved.")
+            st.rerun()
+    with b2:
+        if st.button("❌ Reject", use_container_width=True):
+            update_declaration_status(selected_id, "Rejected", 0, admin_remarks, st.session_state.employee_name or "Admin")
+            st.warning("Declaration rejected.")
+            st.rerun()
+    with b3:
+        if st.button("🗑️ Delete", use_container_width=True):
+            delete_declaration(selected_id)
+            st.error("Declaration deleted.")
+            st.rerun()
+    csv = filtered.to_csv(index=False).encode("utf-8")
+    st.download_button("⬇️ Download Approval Data CSV", csv, file_name="employee_declaration_approval_data.csv", mime="text/csv", use_container_width=True)
+
+
+def render_employee_tax_summary_snapshot():
+    st.markdown("### 📊 My Tax Declaration Snapshot")
+    employee_id = str(st.session_state.employee_id)
+    df = load_employee_declarations(employee_id)
+    if df.empty:
+        st.info("No declaration data yet. Submit investment/reimbursement proofs to see your tax snapshot.")
+        return
+    approved_df = df[df["status"] == "Approved"]
+    pending_df = df[df["status"] == "Pending"]
+    rejected_df = df[df["status"] == "Rejected"]
+    approved_amount = pd.to_numeric(approved_df.get("approved_amount", 0), errors="coerce").fillna(0).sum()
+    pending_amount = pd.to_numeric(pending_df.get("claimed_amount", 0), errors="coerce").fillna(0).sum()
+    rejected_amount = pd.to_numeric(rejected_df.get("claimed_amount", 0), errors="coerce").fillna(0).sum()
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Approved Declarations", f"₹{approved_amount:,.0f}")
+    c2.metric("Pending Review", f"₹{pending_amount:,.0f}")
+    c3.metric("Rejected Claims", f"₹{rejected_amount:,.0f}")
+    if not approved_df.empty:
+        section_summary = approved_df.groupby("section", as_index=False)["approved_amount"].sum().sort_values("approved_amount", ascending=False)
+        st.markdown("#### Approved Amount by Section")
+        st.dataframe(section_summary, use_container_width=True, hide_index=True)
+
 # =====================================================
 # LOGOUT
 # =====================================================
@@ -2337,6 +2617,16 @@ with right:
                 st.info("No categories found under this section. Please check the Category column in Excel.")
         st.markdown("</div>", unsafe_allow_html=True)
 
+
+    # =====================================================
+    # EMPLOYEE TAX DECLARATION PORTAL
+    # =====================================================
+    with st.expander("🧾 Employee Declaration Portal", expanded=False):
+        render_employee_declaration_portal()
+
+    with st.expander("📊 My Tax Declaration Snapshot", expanded=False):
+        render_employee_tax_summary_snapshot()
+
     # =====================================================
     # CHAT WIDGET (proper st.chat_message style)
     # =====================================================
@@ -2413,6 +2703,10 @@ if st.session_state.role == "Admin":
 
     with st.expander("💼 Payroll & Tax Engine Setup - NEW", expanded=True):
         render_payroll_tax_engine_panel()
+
+    with st.expander("✅ Employee Declaration Approval Panel", expanded=True):
+        render_admin_declaration_approval_panel()
+
 
     with st.expander("Admin Panel: User Management"):
         st.markdown("### Reset Employee Password")
