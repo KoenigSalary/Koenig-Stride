@@ -1342,6 +1342,14 @@ def get_db_connection():
     return conn
 
 
+def add_column_if_missing(cur, table_name, column_name, column_definition):
+    cur.execute(f"PRAGMA table_info({table_name})")
+    existing_columns = [row[1] for row in cur.fetchall()]
+
+    if column_name not in existing_columns:
+        cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
+
+
 def init_payroll_database():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -1363,6 +1371,13 @@ def init_payroll_database():
             updated_at TEXT DEFAULT ''
         )
     """)
+
+    # Upgrade old DB if table already existed from previous version
+    add_column_if_missing(cur, "salary_structure_master", "proof_required", "INTEGER DEFAULT 0")
+    add_column_if_missing(cur, "salary_structure_master", "enabled", "INTEGER DEFAULT 1")
+    add_column_if_missing(cur, "salary_structure_master", "sort_order", "INTEGER DEFAULT 0")
+    add_column_if_missing(cur, "salary_structure_master", "remarks", "TEXT DEFAULT ''")
+    add_column_if_missing(cur, "salary_structure_master", "updated_at", "TEXT DEFAULT ''")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS employee_master (
