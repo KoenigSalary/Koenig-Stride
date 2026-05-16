@@ -3,11 +3,14 @@ import pandas as pd
 from pathlib import Path
 import base64
 import hashlib
+import html
+import io
 import re
 import uuid
 from datetime import datetime
 import sqlite3
 import numpy as np
+import streamlit.components.v1 as components
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -2439,7 +2442,7 @@ def render_inline_proof_viewer(proof_path):
 
 def render_admin_declaration_approval_panel():
     st.markdown("### ✅ Investment / Declaration Approval Panel")
-    st.caption("Approve/reject employee investments, reimbursements, Meal Passes/Sodexo, and Form 12B/12BB.")
+    st.caption("Change status in the table, enter approved amount/remarks, then click Submit Updates.")
 
     df = load_employee_declarations()
 
@@ -2451,14 +2454,14 @@ def render_admin_declaration_approval_panel():
 
     with c1:
         status_filter = st.selectbox(
-            "Status",
+            "Filter Status",
             ["All", "Pending", "Approved", "Rejected", "Delete"],
             key="admin_decl_status_filter"
         )
 
     with c2:
         section_filter = st.selectbox(
-            "Section",
+            "Filter Section",
             ["All"] + sorted(df["section"].astype(str).dropna().unique().tolist()),
             key="admin_decl_section_filter"
         )
@@ -2488,7 +2491,7 @@ def render_admin_declaration_approval_panel():
         st.info("No matching declarations.")
         return
 
-    st.markdown("#### Update Status Directly")
+    st.markdown("#### Step 1: Update Status in Table")
 
     editable_cols = [
         "id", "employee_id", "employee_name", "financial_year", "tax_regime",
@@ -2501,7 +2504,6 @@ def render_admin_declaration_approval_panel():
 
     edit_df = filtered[editable_cols].copy()
 
-    # Keep original values for comparison after editing
     original_status_map = dict(zip(edit_df["id"], edit_df["status"]))
     original_approved_map = dict(zip(edit_df["id"], edit_df["approved_amount"]))
     original_remarks_map = dict(zip(edit_df["id"], edit_df["admin_remarks"]))
@@ -2541,10 +2543,7 @@ def render_admin_declaration_approval_panel():
         }
     )
 
-    st.info(
-        "Change Status from the dropdown. Use Approved / Rejected / Delete. "
-        "Then click Submit Updates below."
-    )
+    st.info("Use the Status dropdown inside the table. Then click Submit Updates.")
 
     if st.button("✅ Submit Updates", use_container_width=True):
         updated_count = 0
@@ -2604,7 +2603,7 @@ def render_admin_declaration_approval_panel():
         st.rerun()
 
     st.markdown("---")
-    st.markdown("#### Uploaded Proof Preview")
+    st.markdown("#### Step 2: View Uploaded Proof Inline")
 
     proof_df = filtered[["id", "employee_id", "employee_name", "section", "proof_file"]].copy()
     proof_df = proof_df[proof_df["proof_file"].astype(str).str.strip() != ""]
@@ -2883,6 +2882,101 @@ try:
     init_employee_master_table()
 except Exception as e:
     st.warning(f"Employee master table initialization warning: {e}")
+
+
+
+# =====================================================
+# VOICE SARIKA - NATIVE STREAMLIT AUDIO INPUT
+# =====================================================
+
+def transcribe_audio_with_openai(audio_bytes):
+    if client is None:
+        return "", "OpenAI API key not available. Please add OPENAI_API_KEY in Streamlit Secrets."
+
+    try:
+        audio_file = io.BytesIO(audio_bytes)
+        audio_file.name = "sarika_voice_input.wav"
+
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file
+        )
+
+        return transcript.text, ""
+
+    except Exception as e:
+        return "", str(e)
+
+
+def speak_button_html(text, button_label="🔊 Speak Reply"):
+    safe_text = html.escape(str(text)).replace("\\n", " ")
+
+    return f"""
+    <button onclick="
+        const msg = new SpeechSynthesisUtterance(`{safe_text}`);
+        msg.lang = 'en-IN';
+        msg.rate = 0.95;
+        msg.pitch = 1.02;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(msg);
+    " style="
+        background:#155be8;
+        color:white;
+        border:none;
+        border-radius:10px;
+        padding:9px 14px;
+        font-weight:700;
+        cursor:pointer;
+        margin-top:6px;
+    ">
+        {button_label}
+    </button>
+    """
+
+
+def render_voice_sarika_panel():
+    st.markdown("### 🎙️ Voice Sarika")
+    st.caption("Record your question, then click **Transcribe & Ask Sarika**.")
+
+    if client is None:
+        st.warning("Voice transcription needs OPENAI_API_KEY in Streamlit Secrets.")
+        st.info("Text chat will still work below.")
+        return
+
+    if not hasattr(st, "audio_input"):
+        st.error("Your Streamlit version does not support native audio recording.")
+        st.info("Please use Streamlit version 1.40.0 or later in requirements.txt.")
+        return
+
+    audio_file = st.audio_input(
+        "Record your question here",
+        key="sarika_native_audio_input"
+    )
+
+    if audio_file is not None:
+        audio_bytes = audio_file.getvalue()
+        st.audio(audio_bytes, format="audio/wav")
+
+        if st.button("📝 Transcribe & Ask Sarika", use_container_width=True, key="voice_transcribe_ask_btn"):
+            with st.spinner("Sarika is listening and thinking..."):
+                transcript, err = transcribe_audio_with_openai(audio_bytes)
+
+                if err:
+                    st.error(f"Voice transcription failed: {err}")
+                elif not transcript.strip():
+                    st.warning("No speech detected. Please try again.")
+                else:
+                    st.success(f"You said: {transcript}")
+                    submit_query(transcript.strip())
+                    st.rerun()
+
+    if st.session_state.chat_history:
+        latest = st.session_state.chat_history[-1]
+        if latest.get("type") == "answer":
+            components.html(
+                speak_button_html(latest.get("answer", ""), "🔊 Speak Latest Reply"),
+                height=60
+            )
 
 
 # =====================================================
