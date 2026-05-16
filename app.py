@@ -3,10 +3,9 @@ import pandas as pd
 from pathlib import Path
 import base64
 import hashlib
-import io
-import html
+from datetime import datetime
+import sqlite3
 import numpy as np
-import streamlit.components.v1 as components
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -15,7 +14,6 @@ try:
     AI_AVAILABLE = True
 except Exception:
     AI_AVAILABLE = False
-
 
 # =====================================================
 # KOENIG STRIDE - POLISHED LOGIN UI + RESPONSIVE
@@ -34,6 +32,7 @@ EXCEL_PATH = BASE_DIR / "knowledge" / "Koenig_VoiceBot_FAQ_Master.xlsx"
 LOGO_PATH = BASE_DIR / "assets" / "koenig_logo.png"
 SARIKA_PATH = BASE_DIR / "assets" / "sarika.png"
 USERS_PATH = BASE_DIR / "users.csv"
+DB_PATH = BASE_DIR / "koenig_stride.db"
 
 DEFAULT_EMPLOYEE_PASSWORD = "Welcome@123"
 DEFAULT_ADMIN_PASSWORD = "admin123"
@@ -1042,135 +1041,6 @@ def load_spoc_master():
 faq_df, load_error = load_knowledge()
 spoc_df = load_spoc_master()
 
-# =====================================================
-# SPOC EDITOR HELPERS
-# =====================================================
-
-def save_spoc_master_to_excel(updated_spoc_df):
-    try:
-        if not EXCEL_PATH.exists():
-            return False, "Knowledge Excel file not found."
-
-        xl = pd.ExcelFile(EXCEL_PATH)
-        sheet_data = {}
-
-        for sheet in xl.sheet_names:
-            if sheet == "SPOC Master":
-                sheet_data[sheet] = updated_spoc_df
-            else:
-                sheet_data[sheet] = pd.read_excel(EXCEL_PATH, sheet_name=sheet).fillna("")
-
-        if "SPOC Master" not in sheet_data:
-            sheet_data["SPOC Master"] = updated_spoc_df
-
-        backup_path = UPLOAD_FOLDER / f"backup_before_spoc_edit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        shutil.copy(EXCEL_PATH, backup_path)
-
-        with pd.ExcelWriter(EXCEL_PATH, engine="openpyxl") as writer:
-            for sheet, df in sheet_data.items():
-                df.to_excel(writer, sheet_name=sheet, index=False)
-
-        st.cache_data.clear()
-        st.cache_resource.clear()
-        return True, f"SPOC Master saved successfully. Backup created: {backup_path.name}"
-
-    except Exception as e:
-        return False, str(e)
-
-
-def get_spoc_columns_for_editor(df):
-    if df.empty:
-        return pd.DataFrame(columns=["Topic", "SPOC Name", "SPOC Email"])
-
-    clean_df = df.copy()
-    clean_df.columns = [str(c).strip() for c in clean_df.columns]
-    return clean_df
-
-
-def render_spoc_editor_panel():
-    st.markdown("### 👥 SPOC Editor Panel")
-    st.caption("Admin can add, edit, delete and save SPOC Master records directly from Koenig Stride.")
-
-    current_spoc_df = load_spoc_master()
-    editor_df = get_spoc_columns_for_editor(current_spoc_df)
-
-    if editor_df.empty:
-        editor_df = pd.DataFrame(columns=["Topic", "SPOC Name", "SPOC Email"])
-
-    st.markdown("#### Current SPOC Master")
-    st.info("Edit the table below, then click **Save SPOC Master**.")
-
-    edited_df = st.data_editor(
-        editor_df,
-        use_container_width=True,
-        num_rows="dynamic",
-        hide_index=True,
-        key="spoc_master_editor"
-    )
-
-    col_save, col_download = st.columns([1, 1])
-
-    with col_save:
-        if st.button("💾 Save SPOC Master", use_container_width=True):
-            cleaned_df = edited_df.fillna("")
-            cleaned_df = cleaned_df[cleaned_df.apply(lambda r: any(str(v).strip() for v in r.values), axis=1)]
-
-            ok, msg = save_spoc_master_to_excel(cleaned_df)
-
-            if ok:
-                st.success(msg)
-                st.warning("Please refresh/re-run the app once to load the updated SPOC Master.")
-            else:
-                st.error(f"Unable to save SPOC Master: {msg}")
-
-    with col_download:
-        csv = edited_df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "⬇️ Download SPOC CSV",
-            csv,
-            file_name="spoc_master_export.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-
-    st.markdown("---")
-    st.markdown("#### Quick Add SPOC")
-
-    with st.form("quick_add_spoc_form", clear_on_submit=True):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            new_topic = st.text_input("Topic / Entity")
-        with c2:
-            new_name = st.text_input("SPOC Name")
-        with c3:
-            new_email = st.text_input("SPOC Email")
-
-        submitted = st.form_submit_button("➕ Add SPOC")
-
-    if submitted:
-        if not new_topic.strip() or not new_name.strip():
-            st.error("Topic and SPOC Name are required.")
-        else:
-            add_df = edited_df.copy()
-            for col in ["Topic", "SPOC Name", "SPOC Email"]:
-                if col not in add_df.columns:
-                    add_df[col] = ""
-
-            new_row = {col: "" for col in add_df.columns}
-            new_row["Topic"] = new_topic.strip()
-            new_row["SPOC Name"] = new_name.strip()
-            new_row["SPOC Email"] = new_email.strip()
-
-            add_df = pd.concat([add_df, pd.DataFrame([new_row])], ignore_index=True)
-            ok, msg = save_spoc_master_to_excel(add_df)
-
-            if ok:
-                st.success("New SPOC added successfully.")
-                st.warning("Please refresh/re-run the app once to view the updated SPOC list.")
-            else:
-                st.error(f"Unable to add SPOC: {msg}")
-
-
 def safe_get(row, col, default=""):
     try:
         return str(row.get(col, default)).strip()
@@ -1463,100 +1333,189 @@ def submit_query(query):
 
 
 # =====================================================
-# VOICE SARIKA HELPERS - NATIVE STREAMLIT AUDIO INPUT
+# SALARY STRUCTURE MASTER + DATABASE FOUNDATION
 # =====================================================
 
-def transcribe_audio_with_openai(audio_bytes):
-    """
-    Transcribe recorded microphone audio using OpenAI Whisper.
-    Requires OPENAI_API_KEY in Streamlit secrets.
-    """
-    if client is None:
-        return "", "OpenAI API key not available. Voice transcription requires OpenAI."
+def get_db_connection():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-    try:
-        audio_file = io.BytesIO(audio_bytes)
-        audio_file.name = "voice_input.wav"
-
-        transcript = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file
+def init_salary_database():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS salary_structure_master (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            component_name TEXT NOT NULL UNIQUE,
+            component_type TEXT DEFAULT 'Allowance',
+            formula_type TEXT DEFAULT 'Fixed',
+            percentage REAL DEFAULT 0,
+            max_limit REAL DEFAULT 0,
+            basis TEXT DEFAULT 'Yearly',
+            taxable_status TEXT DEFAULT 'Taxable',
+            enabled INTEGER DEFAULT 1,
+            sort_order INTEGER DEFAULT 0,
+            remarks TEXT DEFAULT '',
+            updated_at TEXT DEFAULT ''
         )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS employee_salary_monthly (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id TEXT, employee_name TEXT, financial_year TEXT, month TEXT,
+            gross_salary REAL DEFAULT 0, basic REAL DEFAULT 0, hra REAL DEFAULT 0,
+            sodexo REAL DEFAULT 0, telephone_internet REAL DEFAULT 0,
+            electricity REAL DEFAULT 0, professional_software REAL DEFAULT 0,
+            skill_development REAL DEFAULT 0, power_utility REAL DEFAULT 0,
+            taxable_allowance REAL DEFAULT 0, uploaded_at TEXT DEFAULT ''
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS employee_tds_monthly (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id TEXT, employee_name TEXT, financial_year TEXT, month TEXT,
+            tds_deducted REAL DEFAULT 0, uploaded_at TEXT DEFAULT ''
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS employee_investments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id TEXT, employee_name TEXT, financial_year TEXT,
+            declaration_type TEXT DEFAULT '', section TEXT DEFAULT '', investment_type TEXT DEFAULT '',
+            claimed_amount REAL DEFAULT 0, approved_amount REAL DEFAULT 0,
+            status TEXT DEFAULT 'Pending', proof_file TEXT DEFAULT '',
+            employee_remarks TEXT DEFAULT '', admin_remarks TEXT DEFAULT '',
+            submitted_at TEXT DEFAULT '', approved_at TEXT DEFAULT '', approved_by TEXT DEFAULT ''
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS employee_tax_computation (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id TEXT, employee_name TEXT, financial_year TEXT,
+            total_income_from_salary REAL DEFAULT 0,
+            allowances_reimbursements REAL DEFAULT 0,
+            standard_deduction REAL DEFAULT 0,
+            approved_investments REAL DEFAULT 0,
+            taxable_salary REAL DEFAULT 0,
+            tax1_total_tax REAL DEFAULT 0,
+            tax2_cess_4_percent REAL DEFAULT 0,
+            tax3_total_tax_after_cess REAL DEFAULT 0,
+            tax4_total_deduction REAL DEFAULT 0,
+            tax5_net_deductible REAL DEFAULT 0,
+            computed_at TEXT DEFAULT ''
+        )
+    """)
+    conn.commit(); conn.close(); seed_salary_structure_master()
 
-        return transcript.text, ""
+def seed_salary_structure_master():
+    conn=get_db_connection(); cur=conn.cursor()
+    rows=[
+        ('Basic','Salary Component','Manual / Upload',0,0,'Monthly','Taxable',1,1,'Base salary component'),
+        ('HRA','Allowance','50% of Basic',50,0,'Monthly','Partial',1,2,'House Rent Allowance'),
+        ('Sodexo / Meal Passes','Reimbursement','Fixed',0,105600,'Yearly','Exempt',1,3,'Editable yearly meal pass limit'),
+        ('Telephone / Internet','Reimbursement','Percentage',3,0,'Yearly','Exempt',1,4,'3% configurable'),
+        ('Electricity Reimbursement','Reimbursement','Percentage',3,0,'Yearly','Exempt',1,5,'3% configurable'),
+        ('Professional / Software','Reimbursement','Percentage',2,0,'Yearly','Exempt',1,6,'2% configurable'),
+        ('Skill Development','Reimbursement','Percentage',2,0,'Yearly','Exempt',1,7,'2% configurable'),
+        ('Power & Utility Allowance','Allowance','Percentage',2,0,'Yearly','Exempt',1,8,'2% configurable'),
+        ('Taxable Allowance','Allowance','Balance',0,0,'Monthly','Taxable',1,9,'Balance after configured components'),
+    ]
+    for r in rows:
+        cur.execute("""INSERT OR IGNORE INTO salary_structure_master
+        (component_name, component_type, formula_type, percentage, max_limit, basis, taxable_status, enabled, sort_order, remarks, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)""", (*r, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    conn.commit(); conn.close()
 
-    except Exception as e:
-        return "", str(e)
+def load_salary_structure_master():
+    init_salary_database()
+    conn=get_db_connection()
+    df=pd.read_sql_query('SELECT * FROM salary_structure_master ORDER BY sort_order, id', conn)
+    conn.close(); return df
 
+def save_salary_structure_master(df):
+    init_salary_database(); save_df=df.copy().fillna('')
+    for col in ['component_name','component_type','formula_type','percentage','max_limit','basis','taxable_status','enabled','sort_order','remarks']:
+        if col not in save_df.columns: save_df[col]=''
+    save_df['percentage']=pd.to_numeric(save_df['percentage'], errors='coerce').fillna(0)
+    save_df['max_limit']=pd.to_numeric(save_df['max_limit'], errors='coerce').fillna(0)
+    save_df['enabled']=save_df['enabled'].apply(lambda x: 1 if str(x).lower() in ['1','true','yes','enabled'] else 0)
+    save_df['sort_order']=pd.to_numeric(save_df['sort_order'], errors='coerce').fillna(0).astype(int)
+    conn=get_db_connection(); cur=conn.cursor(); cur.execute('DELETE FROM salary_structure_master')
+    for _,row in save_df.iterrows():
+        name=str(row['component_name']).strip()
+        if not name: continue
+        cur.execute("""INSERT INTO salary_structure_master
+        (component_name, component_type, formula_type, percentage, max_limit, basis, taxable_status, enabled, sort_order, remarks, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)""", (name, str(row['component_type']).strip(), str(row['formula_type']).strip(), float(row['percentage']), float(row['max_limit']), str(row['basis']).strip(), str(row['taxable_status']).strip(), int(row['enabled']), int(row['sort_order']), str(row['remarks']).strip(), datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    conn.commit(); conn.close()
 
-def speak_button_html(text, button_label="🔊 Speak Reply"):
+def calculate_salary_split(annual_salary, basic_percent=40):
+    structure_df=load_salary_structure_master(); annual_salary=float(annual_salary or 0); basic=round(annual_salary*basic_percent/100,2)
+    result={'Annual Salary':annual_salary,'Basic':basic,'HRA':0,'Sodexo / Meal Passes':0,'Telephone / Internet':0,'Electricity Reimbursement':0,'Professional / Software':0,'Skill Development':0,'Power & Utility Allowance':0,'Taxable Allowance':0,'Total Configured Components':0}
+    for _,row in structure_df.iterrows():
+        if int(row.get('enabled',1))!=1: continue
+        component=str(row.get('component_name','')).strip(); formula=str(row.get('formula_type','')).strip().lower(); pct=float(row.get('percentage',0) or 0); limit=float(row.get('max_limit',0) or 0)
+        if component=='Basic': result[component]=basic
+        elif component=='HRA': result[component]=round(basic*pct/100,2)
+        elif component=='Taxable Allowance': continue
+        elif formula=='fixed': result[component]=round(limit,2)
+        elif formula=='percentage':
+            val=annual_salary*pct/100
+            if limit>0: val=min(val,limit)
+            result[component]=round(val,2)
+        elif formula=='50% of basic': result[component]=round(basic*pct/100,2)
+    total=sum(v for k,v in result.items() if k not in ['Annual Salary','Taxable Allowance','Total Configured Components'])
+    result['Total Configured Components']=round(total,2); result['Taxable Allowance']=round(max(annual_salary-total,0),2)
+    return result
 
-    safe_text = html.escape(str(text)).replace("\n", " ")
+def render_salary_structure_master_panel():
+    st.markdown('### 💼 Salary Structure Master')
+    st.caption('Admin can configure salary components, formulas, thresholds, taxable status and enable/disable components.')
+    df=load_salary_structure_master()
+    cols=['component_name','component_type','formula_type','percentage','max_limit','basis','taxable_status','enabled','sort_order','remarks']
+    edited=st.data_editor(df[cols], use_container_width=True, num_rows='dynamic', hide_index=True, key='salary_structure_editor', column_config={
+        'component_name': st.column_config.TextColumn('Component', required=True),
+        'component_type': st.column_config.SelectboxColumn('Type', options=['Salary Component','Allowance','Reimbursement','Deduction','Other']),
+        'formula_type': st.column_config.SelectboxColumn('Formula', options=['Manual / Upload','Fixed','Percentage','50% of Basic','Balance','Formula']),
+        'percentage': st.column_config.NumberColumn('Percentage', min_value=0.0, step=0.5),
+        'max_limit': st.column_config.NumberColumn('Max Limit', min_value=0.0, step=1000.0),
+        'basis': st.column_config.SelectboxColumn('Basis', options=['Monthly','Yearly','Per Claim','As Approved']),
+        'taxable_status': st.column_config.SelectboxColumn('Taxable Status', options=['Taxable','Exempt','Partial','Conditional']),
+        'enabled': st.column_config.CheckboxColumn('Enabled'),
+        'sort_order': st.column_config.NumberColumn('Sort Order', min_value=0, step=1),
+        'remarks': st.column_config.TextColumn('Remarks'),
+    })
+    c1,c2,c3=st.columns(3)
+    with c1:
+        if st.button('💾 Save Salary Structure', use_container_width=True): save_salary_structure_master(edited); st.success('Salary Structure Master saved successfully.')
+    with c2:
+        st.download_button('⬇️ Download Structure CSV', edited.to_csv(index=False).encode('utf-8'), file_name='salary_structure_master.csv', mime='text/csv', use_container_width=True)
+    with c3:
+        if st.button('🔄 Reload Default Missing Components', use_container_width=True): seed_salary_structure_master(); st.success('Default missing components reloaded.')
+    st.markdown('---'); st.markdown('### 🧮 Auto Salary Split Preview')
+    c1,c2=st.columns(2)
+    with c1: annual_salary=st.number_input('Annual Salary / CTC', min_value=0.0, step=10000.0, value=1200000.0)
+    with c2: basic_percent=st.number_input('Basic % of Annual Salary', min_value=0.0, max_value=100.0, step=1.0, value=40.0)
+    if st.button('Calculate Salary Split', use_container_width=True):
+        res=calculate_salary_split(annual_salary,basic_percent)
+        st.dataframe(pd.DataFrame([{'Component':k,'Annual Amount':v,'Monthly Amount':round(v/12,2)} for k,v in res.items()]), use_container_width=True, hide_index=True)
+    st.markdown('---'); st.markdown('### Tax Computation Output Fields')
+    tax_fields=pd.DataFrame([
+        {'Field':'Total Income from Salary','Meaning':'Annual salary income before deductions'},
+        {'Field':'Allowances / Reimbursements','Meaning':'Approved exempt or conditional reimbursements'},
+        {'Field':'Standard Deduction','Meaning':'As per applicable tax regime/rules'},
+        {'Field':'Approved Investments','Meaning':'Only approved employee declarations/proofs'},
+        {'Field':'Taxable Salary','Meaning':'Salary after applicable deductions/exemptions'},
+        {'Field':'Tax1','Meaning':'Total Tax'},
+        {'Field':'Tax2','Meaning':'Tax after adding 4% cess'},
+        {'Field':'Tax3','Meaning':'Total Tax after Cess'},
+        {'Field':'Tax4','Meaning':'Total Deduction'},
+        {'Field':'Tax5','Meaning':'Net Deductible'},
+    ])
+    st.dataframe(tax_fields, use_container_width=True, hide_index=True)
 
-    return f"""
-    <button onclick="
-        const msg = new SpeechSynthesisUtterance(`{safe_text}`);
-        msg.lang = 'en-IN';
-        msg.rate = 0.95;
-        msg.pitch = 1.02;
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(msg);
-    " style="
-        background:#155be8;
-        color:white;
-        border:none;
-        border-radius:10px;
-        padding:9px 14px;
-        font-weight:700;
-        cursor:pointer;
-        margin-top:6px;
-    ">
-        {button_label}
-    </button>
-    """
-
-def render_voice_sarika_panel():
-    st.markdown("### 🎙️ Voice Sarika")
-    st.caption("Record your question, then click **Transcribe & Ask Sarika**.")
-
-    if client is None:
-        st.info("OpenAI API key is needed for voice transcription. Add OPENAI_API_KEY in Streamlit Secrets.")
-        return
-
-    if not hasattr(st, "audio_input"):
-        st.error("Your Streamlit version does not support native voice recording.")
-        st.info("Please upgrade Streamlit in requirements.txt, for example: streamlit>=1.40.0")
-        return
-
-    audio_file = st.audio_input(
-        "Record your question here",
-        key="sarika_native_audio_input"
-    )
-
-    if audio_file is not None:
-        audio_bytes = audio_file.getvalue()
-        st.audio(audio_bytes, format="audio/wav")
-
-        if st.button("📝 Transcribe & Ask Sarika", use_container_width=True, key="native_voice_transcribe_btn"):
-            with st.spinner("Sarika is listening and thinking..."):
-                transcript, err = transcribe_audio_with_openai(audio_bytes)
-
-                if err:
-                    st.error(f"Voice transcription failed: {err}")
-                elif not transcript.strip():
-                    st.warning("No speech detected. Please try again.")
-                else:
-                    st.success(f"You said: {transcript}")
-                    submit_query(transcript.strip())
-                    st.rerun()
-
-    if st.session_state.chat_history:
-        latest = st.session_state.chat_history[-1]
-        if latest.get("type") == "answer":
-            components.html(
-                speak_button_html(latest.get("answer", ""), "🔊 Speak Latest Reply"),
-                height=55
-            )
+init_salary_database()
 
 # =====================================================
 # LOGOUT
@@ -1704,13 +1663,6 @@ with right:
             else:
                 st.info("No categories found under this section. Please check the Category column in Excel.")
         st.markdown("</div>", unsafe_allow_html=True)
-
-
-    # =====================================================
-    # VOICE SARIKA PANEL
-    # =====================================================
-    with st.expander("🎙️ Voice Sarika", expanded=False):
-        render_voice_sarika_panel()
 
     # =====================================================
     # CHAT WIDGET (proper st.chat_message style)
