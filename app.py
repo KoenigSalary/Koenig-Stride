@@ -2368,7 +2368,7 @@ def render_employee_declaration_portal():
             st.success("Within configured limit")
     previous_employer_income = 0.0
     previous_employer_tds = 0.0
-    if section in ["Form 12B", "Form 12BB", "Previous Employer Income"]: or declaration_type in ["Form 12B / 12BB", "Previous Employer"]:
+    if section in ["Form 12B", "Form 12BB", "Previous Employer Income"]: 
         st.markdown("#### Previous Employer / Form 12B-12BB Details")
         p1, p2 = st.columns(2)
         with p1:
