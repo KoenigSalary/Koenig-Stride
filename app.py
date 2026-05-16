@@ -3,9 +3,10 @@ import pandas as pd
 from pathlib import Path
 import base64
 import hashlib
-import shutil
-from datetime import datetime
+import io
+import html
 import numpy as np
+import streamlit.components.v1 as components
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -14,6 +15,12 @@ try:
     AI_AVAILABLE = True
 except Exception:
     AI_AVAILABLE = False
+
+try:
+    from streamlit_mic_recorder import mic_recorder
+    MIC_RECORDER_AVAILABLE = True
+except Exception:
+    MIC_RECORDER_AVAILABLE = False
 
 # =====================================================
 # KOENIG STRIDE - POLISHED LOGIN UI + RESPONSIVE
@@ -32,10 +39,6 @@ EXCEL_PATH = BASE_DIR / "knowledge" / "Koenig_VoiceBot_FAQ_Master.xlsx"
 LOGO_PATH = BASE_DIR / "assets" / "koenig_logo.png"
 SARIKA_PATH = BASE_DIR / "assets" / "sarika.png"
 USERS_PATH = BASE_DIR / "users.csv"
-
-UPLOAD_FOLDER = BASE_DIR / "knowledge"
-UPLOAD_FOLDER.mkdir(exist_ok=True)
-KNOWLEDGE_FILE = UPLOAD_FOLDER / "Koenig_VoiceBot_FAQ_Master.xlsx"
 
 DEFAULT_EMPLOYEE_PASSWORD = "Welcome@123"
 DEFAULT_ADMIN_PASSWORD = "admin123"
@@ -1044,6 +1047,135 @@ def load_spoc_master():
 faq_df, load_error = load_knowledge()
 spoc_df = load_spoc_master()
 
+# =====================================================
+# SPOC EDITOR HELPERS
+# =====================================================
+
+def save_spoc_master_to_excel(updated_spoc_df):
+    try:
+        if not EXCEL_PATH.exists():
+            return False, "Knowledge Excel file not found."
+
+        xl = pd.ExcelFile(EXCEL_PATH)
+        sheet_data = {}
+
+        for sheet in xl.sheet_names:
+            if sheet == "SPOC Master":
+                sheet_data[sheet] = updated_spoc_df
+            else:
+                sheet_data[sheet] = pd.read_excel(EXCEL_PATH, sheet_name=sheet).fillna("")
+
+        if "SPOC Master" not in sheet_data:
+            sheet_data["SPOC Master"] = updated_spoc_df
+
+        backup_path = UPLOAD_FOLDER / f"backup_before_spoc_edit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        shutil.copy(EXCEL_PATH, backup_path)
+
+        with pd.ExcelWriter(EXCEL_PATH, engine="openpyxl") as writer:
+            for sheet, df in sheet_data.items():
+                df.to_excel(writer, sheet_name=sheet, index=False)
+
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        return True, f"SPOC Master saved successfully. Backup created: {backup_path.name}"
+
+    except Exception as e:
+        return False, str(e)
+
+
+def get_spoc_columns_for_editor(df):
+    if df.empty:
+        return pd.DataFrame(columns=["Topic", "SPOC Name", "SPOC Email"])
+
+    clean_df = df.copy()
+    clean_df.columns = [str(c).strip() for c in clean_df.columns]
+    return clean_df
+
+
+def render_spoc_editor_panel():
+    st.markdown("### 👥 SPOC Editor Panel")
+    st.caption("Admin can add, edit, delete and save SPOC Master records directly from Koenig Stride.")
+
+    current_spoc_df = load_spoc_master()
+    editor_df = get_spoc_columns_for_editor(current_spoc_df)
+
+    if editor_df.empty:
+        editor_df = pd.DataFrame(columns=["Topic", "SPOC Name", "SPOC Email"])
+
+    st.markdown("#### Current SPOC Master")
+    st.info("Edit the table below, then click **Save SPOC Master**.")
+
+    edited_df = st.data_editor(
+        editor_df,
+        use_container_width=True,
+        num_rows="dynamic",
+        hide_index=True,
+        key="spoc_master_editor"
+    )
+
+    col_save, col_download = st.columns([1, 1])
+
+    with col_save:
+        if st.button("💾 Save SPOC Master", use_container_width=True):
+            cleaned_df = edited_df.fillna("")
+            cleaned_df = cleaned_df[cleaned_df.apply(lambda r: any(str(v).strip() for v in r.values), axis=1)]
+
+            ok, msg = save_spoc_master_to_excel(cleaned_df)
+
+            if ok:
+                st.success(msg)
+                st.warning("Please refresh/re-run the app once to load the updated SPOC Master.")
+            else:
+                st.error(f"Unable to save SPOC Master: {msg}")
+
+    with col_download:
+        csv = edited_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "⬇️ Download SPOC CSV",
+            csv,
+            file_name="spoc_master_export.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
+    st.markdown("---")
+    st.markdown("#### Quick Add SPOC")
+
+    with st.form("quick_add_spoc_form", clear_on_submit=True):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            new_topic = st.text_input("Topic / Entity")
+        with c2:
+            new_name = st.text_input("SPOC Name")
+        with c3:
+            new_email = st.text_input("SPOC Email")
+
+        submitted = st.form_submit_button("➕ Add SPOC")
+
+    if submitted:
+        if not new_topic.strip() or not new_name.strip():
+            st.error("Topic and SPOC Name are required.")
+        else:
+            add_df = edited_df.copy()
+            for col in ["Topic", "SPOC Name", "SPOC Email"]:
+                if col not in add_df.columns:
+                    add_df[col] = ""
+
+            new_row = {col: "" for col in add_df.columns}
+            new_row["Topic"] = new_topic.strip()
+            new_row["SPOC Name"] = new_name.strip()
+            new_row["SPOC Email"] = new_email.strip()
+
+            add_df = pd.concat([add_df, pd.DataFrame([new_row])], ignore_index=True)
+            ok, msg = save_spoc_master_to_excel(add_df)
+
+            if ok:
+                st.success("New SPOC added successfully.")
+                st.warning("Please refresh/re-run the app once to view the updated SPOC list.")
+            else:
+                st.error(f"Unable to add SPOC: {msg}")
+
+
 def safe_get(row, col, default=""):
     try:
         return str(row.get(col, default)).strip()
@@ -1336,281 +1468,94 @@ def submit_query(query):
 
 
 # =====================================================
-# KNOWLEDGE MANAGEMENT VALIDATION
+# VOICE SARIKA HELPERS
 # =====================================================
 
-def validate_knowledge_file(file_path):
-    issues = []
+def transcribe_audio_with_openai(audio_bytes):
+    if client is None:
+        return "", "OpenAI API key not available. Voice transcription requires OpenAI."
 
     try:
-        xl = pd.ExcelFile(file_path)
+        audio_file = io.BytesIO(audio_bytes)
+        audio_file.name = "voice_input.wav"
 
-        required_sheets = [
-            "Salary & Tax FAQs",
-            "Entity Nexus FAQs"
-        ]
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file
+        )
 
-        for sheet in required_sheets:
-            if sheet not in xl.sheet_names:
-                issues.append({
-                    "Type": "Missing Sheet",
-                    "Sheet": sheet,
-                    "Row": "",
-                    "Details": f"{sheet} sheet missing"
-                })
-                continue
-
-            df = pd.read_excel(file_path, sheet_name=sheet).fillna("")
-            df.columns = [str(c).strip() for c in df.columns]
-
-            if "Question" not in df.columns:
-                issues.append({
-                    "Type": "Missing Column",
-                    "Sheet": sheet,
-                    "Row": "",
-                    "Details": "Question column missing"
-                })
-                continue
-
-            if "Protected" not in df.columns:
-                issues.append({
-                    "Type": "Missing Column",
-                    "Sheet": sheet,
-                    "Row": "",
-                    "Details": "Protected column missing"
-                })
-
-            if "SPOC Name" not in df.columns:
-                issues.append({
-                    "Type": "Missing Column",
-                    "Sheet": sheet,
-                    "Row": "",
-                    "Details": "SPOC Name column missing"
-                })
-
-            if "SPOC Email" not in df.columns:
-                issues.append({
-                    "Type": "Missing Column",
-                    "Sheet": sheet,
-                    "Row": "",
-                    "Details": "SPOC Email column missing"
-                })
-
-            duplicate_questions = (
-                df[df["Question"].astype(str).str.strip() != ""]
-                .duplicated(subset=["Question"], keep=False)
-            )
-
-            if duplicate_questions.any():
-                duplicates_df = df[duplicate_questions]
-                for idx, row in duplicates_df.iterrows():
-                    issues.append({
-                        "Type": "Duplicate Question",
-                        "Sheet": sheet,
-                        "Row": idx + 2,
-                        "Details": str(row.get("Question", "")).strip()
-                    })
-
-            for idx, row in df.iterrows():
-                question = str(row.get("Question", "")).strip()
-
-                answer = ""
-                for answer_col in ["Display Message (Voice)", "Voice Response", "Answer (Internal)", "Answer", "Response"]:
-                    if answer_col in df.columns:
-                        answer = str(row.get(answer_col, "")).strip()
-                        if answer:
-                            break
-
-                protected = str(row.get("Protected", "")).strip().lower()
-                spoc_name = str(row.get("SPOC Name", "")).strip()
-                spoc_email = str(row.get("SPOC Email", "")).strip()
-
-                if question == "":
-                    issues.append({
-                        "Type": "Missing Question",
-                        "Sheet": sheet,
-                        "Row": idx + 2,
-                        "Details": "Question is blank"
-                    })
-
-                if question and answer == "":
-                    issues.append({
-                        "Type": "Missing Answer",
-                        "Sheet": sheet,
-                        "Row": idx + 2,
-                        "Details": question
-                    })
-
-                if protected in ["yes", "true", "1", "y", "protected"]:
-                    if spoc_name == "":
-                        issues.append({
-                            "Type": "Protected Without SPOC Name",
-                            "Sheet": sheet,
-                            "Row": idx + 2,
-                            "Details": question or "Question blank"
-                        })
-
-                    if spoc_email == "":
-                        issues.append({
-                            "Type": "Protected Without SPOC Email",
-                            "Sheet": sheet,
-                            "Row": idx + 2,
-                            "Details": question or "Question blank"
-                        })
-
-        if "SPOC Master" in xl.sheet_names:
-            spoc_df_check = pd.read_excel(file_path, sheet_name="SPOC Master").fillna("")
-            spoc_df_check.columns = [str(c).strip() for c in spoc_df_check.columns]
-
-            possible_email_cols = [c for c in spoc_df_check.columns if "email" in c.lower()]
-            possible_name_cols = [c for c in spoc_df_check.columns if "name" in c.lower()]
-
-            if not possible_name_cols:
-                issues.append({
-                    "Type": "SPOC Master Issue",
-                    "Sheet": "SPOC Master",
-                    "Row": "",
-                    "Details": "No SPOC name column detected"
-                })
-
-            if not possible_email_cols:
-                issues.append({
-                    "Type": "SPOC Master Issue",
-                    "Sheet": "SPOC Master",
-                    "Row": "",
-                    "Details": "No SPOC email column detected"
-                })
-        else:
-            issues.append({
-                "Type": "Missing Sheet",
-                "Sheet": "SPOC Master",
-                "Row": "",
-                "Details": "SPOC Master sheet missing"
-            })
-
-        return pd.DataFrame(issues)
+        return transcript.text, ""
 
     except Exception as e:
-        return pd.DataFrame([{
-            "Type": "File Error",
-            "Sheet": "",
-            "Row": "",
-            "Details": str(e)
-        }])
+        return "", str(e)
 
 
-def knowledge_file_summary(file_path):
-    try:
-        xl = pd.ExcelFile(file_path)
-        rows = []
+def speak_button_html(text, button_label="🔊 Speak Reply"):
+    safe_text = html.escape(str(text)).replace("\n", " ")
+    return f"""
+    <button onclick="
+        const msg = new SpeechSynthesisUtterance(`{safe_text}`);
+        msg.lang = 'en-IN';
+        msg.rate = 0.95;
+        msg.pitch = 1.02;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(msg);
+    " style="
+        background:#155be8;
+        color:white;
+        border:none;
+        border-radius:10px;
+        padding:9px 14px;
+        font-weight:700;
+        cursor:pointer;
+        margin-top:6px;
+    ">{button_label}</button>
+    """
 
-        for sheet in xl.sheet_names:
-            df = pd.read_excel(file_path, sheet_name=sheet).fillna("")
-            rows.append({
-                "Sheet": sheet,
-                "Rows": len(df),
-                "Columns": len(df.columns),
-                "Column Names": ", ".join([str(c) for c in df.columns])
-            })
 
-        return pd.DataFrame(rows), ""
+def render_voice_sarika_panel():
+    st.markdown("### 🎙️ Voice Sarika")
+    st.caption("Ask Sarika by voice. The recorded audio is transcribed and then sent to Koenig Stride.")
 
-    except Exception as e:
-        return pd.DataFrame(), str(e)
+    if not MIC_RECORDER_AVAILABLE:
+        st.warning("Voice recorder package is not installed. Please add `streamlit-mic-recorder` to requirements.txt.")
+        return
 
+    if client is None:
+        st.info("OpenAI API key is needed for voice transcription. Add OPENAI_API_KEY in Streamlit Secrets.")
+        return
 
-def render_knowledge_management_panel():
-    st.markdown("### 📚 Knowledge Management Panel")
-    st.caption("Upload and validate the Koenig Stride Excel knowledge file directly from the Admin panel.")
-
-    uploaded_file = st.file_uploader(
-        "Upload Updated Excel Knowledge File",
-        type=["xlsx"],
-        key="knowledge_file_uploader"
+    audio = mic_recorder(
+        start_prompt="🎙️ Start Recording",
+        stop_prompt="⏹️ Stop Recording",
+        just_once=True,
+        use_container_width=True,
+        key="sarika_voice_recorder"
     )
 
-    if uploaded_file is not None:
-        temp_path = UPLOAD_FOLDER / "temp_uploaded_knowledge.xlsx"
+    if audio and "bytes" in audio:
+        st.audio(audio["bytes"], format="audio/wav")
 
-        with open(temp_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
+        if st.button("📝 Transcribe & Ask Sarika", use_container_width=True):
+            with st.spinner("Sarika is listening and thinking..."):
+                transcript, err = transcribe_audio_with_openai(audio["bytes"])
 
-        validation_df = validate_knowledge_file(temp_path)
+                if err:
+                    st.error(f"Voice transcription failed: {err}")
+                elif not transcript.strip():
+                    st.warning("No speech detected. Please try again.")
+                else:
+                    st.success(f"You said: {transcript}")
+                    submit_query(transcript.strip())
+                    st.rerun()
 
-        if validation_df.empty:
-            backup_path = UPLOAD_FOLDER / f"backup_Koenig_VoiceBot_FAQ_Master_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-
-            if KNOWLEDGE_FILE.exists():
-                shutil.copy(KNOWLEDGE_FILE, backup_path)
-
-            shutil.copy(temp_path, KNOWLEDGE_FILE)
-
-            st.success("Knowledge file uploaded and activated successfully.")
-            st.info(f"Updated on: {datetime.now().strftime('%d-%b-%Y %I:%M %p')}")
-
-            if KNOWLEDGE_FILE.exists():
-                st.caption(f"Backup created: {backup_path.name}")
-
-            st.cache_data.clear()
-            st.cache_resource.clear()
-
-            st.warning("Please refresh/re-run the app once to load the updated knowledge file.")
-
-        else:
-            st.error("Validation issues found. File was not activated.")
-            st.dataframe(validation_df, use_container_width=True, hide_index=True)
-
-            csv = validation_df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "Download Validation Report",
-                csv,
-                file_name="knowledge_validation_report.csv",
-                mime="text/csv"
+    if st.session_state.chat_history:
+        latest = st.session_state.chat_history[-1]
+        if latest.get("type") == "answer":
+            components.html(
+                speak_button_html(latest.get("answer", ""), "🔊 Speak Latest Reply"),
+                height=55
             )
-
-    st.markdown("---")
-    st.markdown("### Current Knowledge Base Summary")
-
-    summary_df, err = knowledge_file_summary(KNOWLEDGE_FILE)
-
-    if err:
-        st.error(f"Error reading current knowledge file: {err}")
-    elif summary_df.empty:
-        st.info("No knowledge file summary available.")
-    else:
-        st.dataframe(summary_df, use_container_width=True, hide_index=True)
-
-    st.markdown("---")
-    st.markdown("### Validate Current Knowledge File")
-
-    if st.button("Run Validation on Current Knowledge File"):
-        current_validation_df = validate_knowledge_file(KNOWLEDGE_FILE)
-
-        if current_validation_df.empty:
-            st.success("No validation issues found in the current knowledge file.")
-        else:
-            st.warning(f"{len(current_validation_df)} issue(s) found.")
-            st.dataframe(current_validation_df, use_container_width=True, hide_index=True)
-
-            csv = current_validation_df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "Download Current Validation Report",
-                csv,
-                file_name="current_knowledge_validation_report.csv",
-                mime="text/csv"
-            )
-
-    st.markdown("---")
-    st.markdown("### Preview Uploaded/Current Sheets")
-
-    try:
-        xl = pd.ExcelFile(KNOWLEDGE_FILE)
-        selected_sheet = st.selectbox("Select sheet to preview", xl.sheet_names, key="knowledge_preview_sheet")
-        preview_df = pd.read_excel(KNOWLEDGE_FILE, sheet_name=selected_sheet).fillna("")
-        st.dataframe(preview_df.head(100), use_container_width=True)
-        st.caption("Showing first 100 rows only.")
-    except Exception as e:
-        st.error(f"Unable to preview knowledge file: {e}")
 
 # =====================================================
 # LOGOUT
@@ -1758,6 +1703,13 @@ with right:
             else:
                 st.info("No categories found under this section. Please check the Category column in Excel.")
         st.markdown("</div>", unsafe_allow_html=True)
+
+
+    # =====================================================
+    # VOICE SARIKA PANEL
+    # =====================================================
+    with st.expander("🎙️ Voice Sarika", expanded=False):
+        render_voice_sarika_panel()
 
     # =====================================================
     # CHAT WIDGET (proper st.chat_message style)
