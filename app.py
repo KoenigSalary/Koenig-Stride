@@ -392,14 +392,32 @@ body.is-login-page [data-testid="column"]:first-child div[role="radiogroup"] lab
 }
 
 .stButton > button {
-    border-radius:14px !important;
-    font-weight:800 !important;
-    min-height:50px;
+    border-radius:10px !important;
+    font-weight:700 !important;
+    min-height:40px;
+    padding:0px 8px !important;
+    margin-bottom:6px !important;
+
     border:1px solid var(--border) !important;
     background:white !important;
     color:#111827 !important;
-    box-shadow:0 5px 16px rgba(15,23,42,.05) !important;
-    transition:transform .08s ease, box-shadow .15s ease, background .15s ease;
+
+    box-shadow:0 3px 10px rgba(15,23,42,.04) !important;
+
+    transition:
+        transform .08s ease,
+        box-shadow .15s ease,
+        background .15s ease;
+}
+
+hr {
+    margin-top:8px !important;
+    margin-bottom:8px !important;
+}
+
+section[data-testid="stSidebar"] .block-container {
+    padding-top:0.4rem !important;
+    padding-bottom:0.4rem !important;
 }
 
 .stButton > button:hover {
