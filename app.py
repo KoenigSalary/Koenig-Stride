@@ -707,6 +707,7 @@ defaults = {
     "selected_module": None,
     "chat_history": [],
     "show_change_password": False,
+    "selected_panel": "Home",
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -2613,6 +2614,22 @@ def logout():
             del st.session_state[key]
     st.rerun()
 
+
+# =====================================================
+# PANEL NAVIGATION
+# =====================================================
+
+def set_panel(panel_name):
+    st.session_state.selected_panel = panel_name
+
+def panel_button(label, panel_name):
+    active = st.session_state.get("selected_panel", "Home") == panel_name
+    prefix = "🔵 " if active else ""
+    if st.button(prefix + label, use_container_width=True, key=f"nav_{panel_name}"):
+        set_panel(panel_name)
+        st.rerun()
+
+
 # =====================================================
 # APP HEADER
 # =====================================================
@@ -2658,50 +2675,46 @@ with left:
     st.markdown("<div class='online'>● Sarika is online</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("""
-    <div class='side-item side-item-active'>🏠 Home</div>
-    <div class='side-item'>👤 Account</div>
-    """, unsafe_allow_html=True)
+    st.markdown("### 📌 Panels")
 
-    if st.button("🔧 Change Password", use_container_width=True):
-        st.session_state.show_change_password = not st.session_state.show_change_password
+    panel_button("🏠 Home", "Home")
+    panel_button("🚀 Start Here", "Start Here")
+    panel_button("👤 Account", "Account")
+    panel_button("🧾 Employee Declaration", "Employee Declaration")
+    panel_button("📊 My Tax Snapshot", "My Tax Snapshot")
+    panel_button("💬 Ask Sarika", "Ask Sarika")
 
-    if st.session_state.show_change_password:
-        with st.expander("Change My Password", expanded=True):
-            old_password = st.text_input("Current Password", type="password", key="old_pwd")
-            new_password = st.text_input("New Password", type="password", key="new_pwd")
-            confirm_password = st.text_input("Confirm Password", type="password", key="confirm_pwd")
-            if st.button("Update My Password", use_container_width=True):
-                ok, msg, row = authenticate_user(st.session_state.employee_id, old_password)
-                if not ok:
-                    st.error("Current password is incorrect.")
-                elif new_password != confirm_password:
-                    st.error("New password and confirm password do not match.")
-                else:
-                    valid, vmsg = validate_password_strength(new_password)
-                    if not valid:
-                        st.error(vmsg)
-                    else:
-                        update_user_password(st.session_state.employee_id, new_password, first_login=False)
-                        st.success("Password changed successfully.")
-                        st.session_state.show_change_password = False
-
-    st.markdown("<div class='side-item'>ℹ️ Help & Support</div>", unsafe_allow_html=True)
+    if st.session_state.role == "Admin":
+        st.markdown("---")
+        st.markdown("### 🛠️ Admin")
+        panel_button("💼 Payroll & Tax Engine", "Payroll Tax Engine")
+        panel_button("✅ Declaration Approval", "Declaration Approval")
+        panel_button("👥 User Management", "User Management")
+        panel_button("📚 Knowledge Base", "Knowledge Base")
+        panel_button("📈 Admin Analytics", "Admin Analytics")
 
 with right:
-    st.markdown("""
-    <div class='hero'>
-        <h2>Welcome to Koenig Stride</h2>
-        <p>Select Start Here to browse guided help,<br>or use the chat box to ask directly.</p>
-    </div>
-    """, unsafe_allow_html=True)
+    selected_panel = st.session_state.get("selected_panel", "Home")
 
-    st.markdown("<div class='primary-start'>", unsafe_allow_html=True)
-    if st.button("🚀 Start Here                                              →", use_container_width=True):
-        st.session_state.menu_open = True
-    st.markdown("</div>", unsafe_allow_html=True)
+    # =====================================================
+    # HOME PANEL
+    # =====================================================
+    if selected_panel == "Home":
+        st.markdown("""
+        <div class='hero' style='margin-top:80px;'>
+            <h2>Welcome to Koenig Stride</h2>
+            <p>Select a panel from the left sidebar,<br>or use Ask Sarika to ask directly.</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-    if st.session_state.menu_open:
+
+    # =====================================================
+    # START HERE PANEL
+    # =====================================================
+    elif selected_panel == "Start Here":
+        st.markdown("## 🚀 Start Here")
+        st.markdown("Select an area below, then choose a category and question.")
+
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.markdown("### Select Area")
         modules = [
@@ -2721,16 +2734,10 @@ with right:
                     st.session_state.selected_module = module_name
         st.markdown("</div>", unsafe_allow_html=True)
 
-    if st.session_state.selected_module:
-        selected = st.session_state.selected_module
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown(f"<span class='selected-pill'>Selected: {selected}</span>", unsafe_allow_html=True)
-
-        # SPOC Routing is powered exclusively by the SPOC Master sheet
-        if selected == "SPOC Routing":
-            st.markdown("### 📞 SPOC Directory")
-            render_spoc_routing()
-        else:
+        if st.session_state.selected_module:
+            selected = st.session_state.selected_module
+            st.markdown("<div class='card'>", unsafe_allow_html=True)
+            st.markdown(f"<span class='selected-pill'>Selected: {selected}</span>", unsafe_allow_html=True)
             st.markdown("### Select Category")
             categories = get_categories_for_module(faq_df, selected)
             if categories:
@@ -2748,100 +2755,104 @@ with right:
                                 render_answer(row)
             else:
                 st.info("No categories found under this section. Please check the Category column in Excel.")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    # =====================================================
+    # ACCOUNT PANEL
+    # =====================================================
+    elif selected_panel == "Account":
+        st.markdown("## 👤 Account")
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.write(f"**Name:** {st.session_state.employee_name}")
+        st.write(f"**Role:** {st.session_state.role}")
+        st.write(f"**Employee ID:** {st.session_state.employee_id}")
+        st.markdown("---")
+        st.markdown("### Change Password")
+
+        old_password = st.text_input("Current Password", type="password", key="account_old_pwd")
+        new_password = st.text_input("New Password", type="password", key="account_new_pwd")
+        confirm_password = st.text_input("Confirm Password", type="password", key="account_confirm_pwd")
+
+        if st.button("Update My Password", use_container_width=True):
+            ok, msg, row = authenticate_user(st.session_state.employee_id, old_password)
+            if not ok:
+                st.error("Current password is incorrect.")
+            elif new_password != confirm_password:
+                st.error("New password and confirm password do not match.")
+            else:
+                valid, vmsg = validate_password_strength(new_password)
+                if not valid:
+                    st.error(vmsg)
+                else:
+                    update_user_password(st.session_state.employee_id, new_password, first_login=False)
+                    st.success("Password changed successfully.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-
     # =====================================================
-    # EMPLOYEE TAX DECLARATION PORTAL
+    # EMPLOYEE DECLARATION PANEL
     # =====================================================
-    with st.expander("🧾 Employee Declaration Portal", expanded=False):
+    elif selected_panel == "Employee Declaration":
         render_employee_declaration_portal()
 
-    with st.expander("📊 My Tax Declaration Snapshot", expanded=False):
+    # =====================================================
+    # TAX SNAPSHOT PANEL
+    # =====================================================
+    elif selected_panel == "My Tax Snapshot":
         render_employee_tax_summary_snapshot()
 
     # =====================================================
-    # CHAT WIDGET (proper st.chat_message style)
+    # ASK SARIKA PANEL
     # =====================================================
-    st.markdown("## 💬 Ask Koenig Stride")
-    st.markdown(
-        "<div style='color:#64748b; font-size:13px; margin-top:-8px; margin-bottom:12px;'>"
-        "Chat directly with Sarika — your AI assistant for tax, salary, labour code and SPOC queries."
-        "</div>",
-        unsafe_allow_html=True
-    )
+    elif selected_panel == "Ask Sarika":
+        st.markdown("## 💬 Ask Sarika")
 
-    # Chat container (scrollable area)
-    chat_container = st.container()
+        with st.expander("🎙️ Voice Sarika", expanded=False):
+            render_voice_sarika_panel()
 
-    with chat_container:
-        if not st.session_state.chat_history:
-            # Greeting bubble when there are no messages yet
-            with st.chat_message("assistant", avatar="👩‍💼"):
-                st.markdown(
-                    f"Hi **{st.session_state.employee_name}** 👋  \n"
-                    "I'm **Sarika**, your Koenig Stride assistant. "
-                    "Ask me anything about **Tax, Salary, Labour Code, Entity Nexus** or **SPOC routing**. "
-                    "You can also click **🚀 Start Here** above to browse guided FAQs."
-                )
-        else:
-            for item in st.session_state.chat_history[-30:]:
-                # User message
-                with st.chat_message("user", avatar="👤"):
-                    st.markdown(item["query"])
+        st.markdown("### Ask by typing")
+        with st.form("ask_form", clear_on_submit=True):
+            query = st.text_input("Type your question here", placeholder="Example: What is NPS?")
+            submitted = st.form_submit_button("➤ Ask Sarika")
 
-                # Assistant message
-                with st.chat_message("assistant", avatar="👩‍💼"):
-                    if item["type"] == "protected":
-                        email_html = f"<br><b>Email:</b> {item.get('email','')}" if item.get("email") else ""
-                        st.markdown(f"""
-                        <div class='protected-box' style='margin:0;'>
-                        <b>🔒 Protected Information</b><br>
-                        {item['answer']}<br><br>
-                        Please contact:<br>
-                        <b>SPOC:</b> {item.get('spoc','Relevant SPOC')}
-                        {email_html}
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown(item["answer"])
+        if submitted and query.strip():
+            with st.spinner("Sarika is thinking..."):
+                submit_query(query.strip())
 
-                    # Admin-only metadata
-                    if st.session_state.role == "Admin":
-                        st.caption(
-                            f"Source: {item.get('source','')} · "
-                            f"Similarity: {item.get('similarity',0):.2f}"
-                        )
+        if st.session_state.chat_history:
+            st.markdown("<div class='card'>", unsafe_allow_html=True)
+            st.markdown("### Conversation")
+            for item in reversed(st.session_state.chat_history[-10:]):
+                st.markdown(f"<div class='user-bubble'><b>You:</b><br>{item['query']}</div>", unsafe_allow_html=True)
 
-    # Bottom chat input (always at the bottom, widget-style)
-    user_query = st.chat_input("Type your question and press Enter… (e.g. What is NPS?)")
-    if user_query and user_query.strip():
-        with st.spinner("Sarika is thinking…"):
-            submit_query(user_query.strip())
-        st.rerun()
+                if item["type"] == "protected":
+                    email_html = f"<br><b>Email:</b> {item.get('email','')}" if item.get("email") else ""
+                    st.markdown(f"""
+                    <div class='protected-box'>
+                    <b>🔒 Sarika:</b><br>
+                    {item['answer']}<br><br>
+                    Please contact:<br>
+                    <b>SPOC:</b> {item.get('spoc','Relevant SPOC')}
+                    {email_html}<br><br>
+                    <span class='small-text'>Source: {item.get('source','')} | Similarity: {item.get('similarity',0):.2f}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    meta = f"<br><br><span class='small-text'>Source: {item.get('source','')} | Similarity: {item.get('similarity',0):.2f}</span>" if st.session_state.role == "Admin" else ""
+                    st.markdown(f"<div class='bot-bubble'><b>Sarika:</b><br>{item['answer']}{meta}</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
-    # Small action row below chat input
-    if st.session_state.chat_history:
-        col_clear, _ = st.columns([1, 4])
-        with col_clear:
-            if st.button("🗑️ Clear chat", use_container_width=True):
-                st.session_state.chat_history = []
-                st.rerun()
-
-# =====================================================
-# ADMIN
-# =====================================================
-
-if st.session_state.role == "Admin":
-
-    with st.expander("💼 Payroll & Tax Engine Setup - NEW", expanded=True):
+    # =====================================================
+    # ADMIN PANELS
+    # =====================================================
+    elif selected_panel == "Payroll Tax Engine" and st.session_state.role == "Admin":
         render_payroll_tax_engine_panel()
 
-    with st.expander("✅ Employee Declaration Approval Panel", expanded=True):
+    elif selected_panel == "Declaration Approval" and st.session_state.role == "Admin":
         render_admin_declaration_approval_panel()
 
-
-    with st.expander("Admin Panel: User Management"):
+    elif selected_panel == "User Management" and st.session_state.role == "Admin":
+        st.markdown("## 👥 User Management")
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.markdown("### Reset Employee Password")
         reset_emp_id = st.text_input("Employee ID to reset", placeholder="Example: 1001")
         if st.button("Reset Employee Password to Welcome@123"):
@@ -2855,8 +2866,10 @@ if st.session_state.role == "Admin":
         users_df = load_users()
         display_df = users_df[["user_id", "role", "first_login", "active", "display_name"]].copy()
         st.dataframe(display_df, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    with st.expander("Admin Preview: Knowledge Base"):
+    elif selected_panel == "Knowledge Base" and st.session_state.role == "Admin":
+        st.markdown("## 📚 Knowledge Base")
         if not faq_df.empty:
             st.success(f"Knowledge base loaded successfully. Total records: {len(faq_df)}")
             cols = [c for c in ["Main Module", "Source", "Category", "Question", "Protected", "SPOC Name", "SPOC Email"] if c in faq_df.columns]
@@ -2864,4 +2877,18 @@ if st.session_state.role == "Admin":
         else:
             st.warning("No knowledge records loaded.")
 
+    elif selected_panel == "Admin Analytics" and st.session_state.role == "Admin":
+        if "render_admin_analytics_dashboard" in globals():
+            render_admin_analytics_dashboard()
+        else:
+            st.info("Admin Analytics function not found in this build.")
+
+    else:
+        st.warning("You are not authorized to view this panel.")
+
+# =====================================================
+# ADMIN
+# =====================================================
+
+# Admin panels are now available from the left sidebar.
 st.markdown("<div class='footer-line'><div>© 2025 Koenig Solutions Ltd. All rights reserved.</div><div>Privacy Policy &nbsp; | &nbsp; Terms of Use</div></div>", unsafe_allow_html=True)
