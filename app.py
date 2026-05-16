@@ -2715,7 +2715,9 @@ def init_employee_master_table():
 
     for col, col_type in required_columns.items():
         if col not in existing_cols:
-            cur.execute(f"ALTER TABLE employee_master ADD COLUMN {col} {col_type}")    """)
+            cur.execute(
+                f"ALTER TABLE employee_master ADD COLUMN {col} {col_type}"
+            )
 
     conn.commit()
     conn.close()
