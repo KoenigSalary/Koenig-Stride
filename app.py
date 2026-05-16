@@ -1333,7 +1333,7 @@ def submit_query(query):
 
 
 # =====================================================
-# SALARY STRUCTURE MASTER + DATABASE FOUNDATION
+# PAYROLL + TAX DATABASE FOUNDATION
 # =====================================================
 
 def get_db_connection():
@@ -1342,7 +1342,7 @@ def get_db_connection():
     return conn
 
 
-def init_salary_database():
+def init_payroll_database():
     conn = get_db_connection()
     cur = conn.cursor()
 
@@ -1356,10 +1356,27 @@ def init_salary_database():
             max_limit REAL DEFAULT 0,
             basis TEXT DEFAULT 'Yearly',
             taxable_status TEXT DEFAULT 'Taxable',
+            proof_required INTEGER DEFAULT 0,
             enabled INTEGER DEFAULT 1,
             sort_order INTEGER DEFAULT 0,
             remarks TEXT DEFAULT '',
             updated_at TEXT DEFAULT ''
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS employee_master (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id TEXT UNIQUE,
+            employee_name TEXT,
+            tax_regime TEXT,
+            pan_no TEXT,
+            gender TEXT,
+            date_of_joining TEXT,
+            date_of_exit TEXT,
+            dob TEXT,
+            designation TEXT,
+            uploaded_at TEXT DEFAULT ''
         )
     """)
 
@@ -1369,17 +1386,25 @@ def init_salary_database():
             employee_id TEXT,
             employee_name TEXT,
             financial_year TEXT,
-            month TEXT,
+            salary_month TEXT,
             gross_salary REAL DEFAULT 0,
             basic REAL DEFAULT 0,
             hra REAL DEFAULT 0,
-            sodexo REAL DEFAULT 0,
+            sodexo_meal_passes REAL DEFAULT 0,
             telephone_internet REAL DEFAULT 0,
-            electricity REAL DEFAULT 0,
+            electricity_reimbursement REAL DEFAULT 0,
             professional_software REAL DEFAULT 0,
             skill_development REAL DEFAULT 0,
-            power_utility REAL DEFAULT 0,
+            power_utility_allowance REAL DEFAULT 0,
             taxable_allowance REAL DEFAULT 0,
+            ot_pli_profit_sharing REAL DEFAULT 0,
+            exgratia REAL DEFAULT 0,
+            gratuity REAL DEFAULT 0,
+            severance REAL DEFAULT 0,
+            leave_encashment REAL DEFAULT 0,
+            referral_bonus REAL DEFAULT 0,
+            other_adjustment REAL DEFAULT 0,
+            total_income_from_salary REAL DEFAULT 0,
             uploaded_at TEXT DEFAULT ''
         )
     """)
@@ -1390,8 +1415,13 @@ def init_salary_database():
             employee_id TEXT,
             employee_name TEXT,
             financial_year TEXT,
-            month TEXT,
+            salary_month TEXT,
             tds_deducted REAL DEFAULT 0,
+            tax1_total_tax REAL DEFAULT 0,
+            tax2_cess_4_percent REAL DEFAULT 0,
+            tax3_total_tax_after_cess REAL DEFAULT 0,
+            tax4_total_deduction REAL DEFAULT 0,
+            tax5_net_deductible REAL DEFAULT 0,
             uploaded_at TEXT DEFAULT ''
         )
     """)
@@ -1423,10 +1453,24 @@ def init_salary_database():
             employee_id TEXT,
             employee_name TEXT,
             financial_year TEXT,
+            gross_annual_salary REAL DEFAULT 0,
+            basic_salary REAL DEFAULT 0,
+            hra REAL DEFAULT 0,
+            sodexo_meal_passes REAL DEFAULT 0,
+            telephone_internet REAL DEFAULT 0,
+            electricity_reimbursement REAL DEFAULT 0,
+            professional_software REAL DEFAULT 0,
+            skill_development REAL DEFAULT 0,
+            power_utility_allowance REAL DEFAULT 0,
+            taxable_allowance REAL DEFAULT 0,
+            bonus_incentive REAL DEFAULT 0,
+            previous_employer_income_12b_12bb REAL DEFAULT 0,
             total_income_from_salary REAL DEFAULT 0,
-            allowances_reimbursements REAL DEFAULT 0,
+            approved_allowances_reimbursements REAL DEFAULT 0,
             standard_deduction REAL DEFAULT 0,
             approved_investments REAL DEFAULT 0,
+            home_loan_deduction REAL DEFAULT 0,
+            other_eligible_deductions REAL DEFAULT 0,
             taxable_salary REAL DEFAULT 0,
             tax1_total_tax REAL DEFAULT 0,
             tax2_cess_4_percent REAL DEFAULT 0,
@@ -1439,7 +1483,6 @@ def init_salary_database():
 
     conn.commit()
     conn.close()
-
     seed_salary_structure_master()
 
 
@@ -1448,50 +1491,100 @@ def seed_salary_structure_master():
     cur = conn.cursor()
 
     default_rows = [
-        ("Basic", "Salary Component", "Manual / Upload", 0, 0, "Monthly", "Taxable", 1, 1, "Base salary component"),
-        ("HRA", "Allowance", "50% of Basic", 50, 0, "Monthly", "Partial", 1, 2, "HRA = 50% of Basic"),
-        ("Sodexo / Meal Passes", "Reimbursement", "Fixed", 0, 105600, "Yearly", "Exempt", 1, 3, "Editable yearly meal pass limit"),
-        ("Telephone / Internet", "Reimbursement", "Percentage", 3, 0, "Yearly", "Exempt", 1, 4, "Editable 3%"),
-        ("Electricity Reimbursement", "Reimbursement", "Percentage", 3, 0, "Yearly", "Exempt", 1, 5, "Editable 3%"),
-        ("Professional / Software", "Reimbursement", "Percentage", 2, 0, "Yearly", "Exempt", 1, 6, "Editable 2%"),
-        ("Skill Development", "Reimbursement", "Percentage", 2, 0, "Yearly", "Exempt", 1, 7, "Editable 2%"),
-        ("Power & Utility Allowance", "Allowance", "Percentage", 2, 0, "Yearly", "Exempt", 1, 8, "Editable 2%"),
-        ("Taxable Allowance", "Allowance", "Balance", 0, 0, "Monthly", "Taxable", 1, 9, "Balance after components"),
+        ("Basic", "Salary Component", "Manual / Upload", 0, 0, "Monthly", "Taxable", 0, 1, 1, "Base salary component"),
+        ("HRA", "Allowance", "50% of Basic", 50, 0, "Monthly", "Partial", 0, 1, 2, "HRA = 50% of Basic"),
+        ("Sodexo / Meal Passes", "Reimbursement", "Fixed", 0, 105600, "Yearly", "Exempt", 0, 1, 3, "Editable yearly meal pass limit"),
+        ("Telephone / Internet", "Reimbursement", "Percentage", 3, 0, "Yearly", "Conditional", 1, 1, 4, "Exempt up to approved proof amount"),
+        ("Electricity Reimbursement", "Reimbursement", "Percentage", 3, 0, "Yearly", "Conditional", 1, 1, 5, "Exempt up to approved proof amount"),
+        ("Professional / Software", "Reimbursement", "Percentage", 2, 0, "Yearly", "Conditional", 1, 1, 6, "Exempt up to approved proof amount"),
+        ("Skill Development", "Reimbursement", "Percentage", 2, 0, "Yearly", "Conditional", 1, 1, 7, "Exempt up to approved proof amount"),
+        ("Power & Utility Allowance", "Allowance", "Percentage", 2, 0, "Yearly", "Conditional", 1, 1, 8, "Exempt up to approved proof amount"),
+        ("Taxable Allowance", "Allowance", "Balance", 0, 0, "Monthly", "Taxable", 0, 1, 9, "Balance after configured components"),
     ]
 
     for row in default_rows:
         cur.execute("""
             INSERT OR IGNORE INTO salary_structure_master (
                 component_name, component_type, formula_type, percentage,
-                max_limit, basis, taxable_status, enabled, sort_order, remarks, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                max_limit, basis, taxable_status, proof_required,
+                enabled, sort_order, remarks, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (*row, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
 
     conn.commit()
     conn.close()
 
 
-def load_salary_structure_master():
-    init_salary_database()
-    conn = get_db_connection()
-    df = pd.read_sql_query(
-        "SELECT * FROM salary_structure_master ORDER BY sort_order, id",
-        conn
+def normalize_header(value):
+    return (
+        str(value)
+        .strip()
+        .lower()
+        .replace("\n", " ")
+        .replace("\r", " ")
+        .replace(".", "")
+        .replace("_", " ")
+        .replace("-", " ")
     )
+
+
+def find_column(df, possible_names):
+    normalized_cols = {normalize_header(c): c for c in df.columns}
+    possible_norm = [normalize_header(x) for x in possible_names]
+
+    for p in possible_norm:
+        if p in normalized_cols:
+            return normalized_cols[p]
+
+    for p in possible_norm:
+        for norm_col, original_col in normalized_cols.items():
+            if p in norm_col or norm_col in p:
+                return original_col
+
+    return None
+
+
+def money_value(row, col):
+    if not col:
+        return 0.0
+    try:
+        value = row.get(col, 0)
+        if pd.isna(value):
+            return 0.0
+        return float(str(value).replace(",", "").strip() or 0)
+    except Exception:
+        return 0.0
+
+
+def text_value(row, col):
+    if not col:
+        return ""
+    try:
+        value = row.get(col, "")
+        if pd.isna(value):
+            return ""
+        return str(value).strip()
+    except Exception:
+        return ""
+
+
+def load_salary_structure_master():
+    init_payroll_database()
+    conn = get_db_connection()
+    df = pd.read_sql_query("SELECT * FROM salary_structure_master ORDER BY sort_order, id", conn)
     conn.close()
     return df
 
 
 def save_salary_structure_master(df):
-    init_salary_database()
+    init_payroll_database()
+    save_df = df.copy().fillna("")
 
     required_cols = [
         "component_name", "component_type", "formula_type", "percentage",
-        "max_limit", "basis", "taxable_status", "enabled",
-        "sort_order", "remarks"
+        "max_limit", "basis", "taxable_status", "proof_required",
+        "enabled", "sort_order", "remarks"
     ]
-
-    save_df = df.copy().fillna("")
 
     for col in required_cols:
         if col not in save_df.columns:
@@ -1499,9 +1592,8 @@ def save_salary_structure_master(df):
 
     save_df["percentage"] = pd.to_numeric(save_df["percentage"], errors="coerce").fillna(0)
     save_df["max_limit"] = pd.to_numeric(save_df["max_limit"], errors="coerce").fillna(0)
-    save_df["enabled"] = save_df["enabled"].apply(
-        lambda x: 1 if str(x).strip().lower() in ["1", "true", "yes", "enabled"] else 0
-    )
+    save_df["proof_required"] = save_df["proof_required"].apply(lambda x: 1 if str(x).lower() in ["1", "true", "yes", "required"] else 0)
+    save_df["enabled"] = save_df["enabled"].apply(lambda x: 1 if str(x).lower() in ["1", "true", "yes", "enabled"] else 0)
     save_df["sort_order"] = pd.to_numeric(save_df["sort_order"], errors="coerce").fillna(0).astype(int)
     save_df["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -1517,8 +1609,9 @@ def save_salary_structure_master(df):
         cur.execute("""
             INSERT INTO salary_structure_master (
                 component_name, component_type, formula_type, percentage,
-                max_limit, basis, taxable_status, enabled, sort_order, remarks, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                max_limit, basis, taxable_status, proof_required,
+                enabled, sort_order, remarks, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             component_name,
             str(row["component_type"]).strip(),
@@ -1527,6 +1620,7 @@ def save_salary_structure_master(df):
             float(row["max_limit"]),
             str(row["basis"]).strip(),
             str(row["taxable_status"]).strip(),
+            int(row["proof_required"]),
             int(row["enabled"]),
             int(row["sort_order"]),
             str(row["remarks"]).strip(),
@@ -1567,22 +1661,17 @@ def calculate_salary_split(annual_salary, basic_percent=40):
 
         if component == "Basic":
             result[component] = basic
-
         elif component == "HRA":
             result[component] = round(basic * percentage / 100, 2)
-
         elif component == "Taxable Allowance":
             continue
-
         elif formula_type == "fixed":
             result[component] = round(max_limit, 2)
-
         elif formula_type == "percentage":
             calculated = annual_salary * percentage / 100
             if max_limit > 0:
                 calculated = min(calculated, max_limit)
             result[component] = round(calculated, 2)
-
         elif formula_type == "50% of basic":
             result[component] = round(basic * percentage / 100, 2)
 
@@ -1598,17 +1687,15 @@ def calculate_salary_split(annual_salary, basic_percent=40):
 
 
 def render_salary_structure_master_panel():
-    st.markdown("## 💼 Salary Structure Master")
-    st.caption("Admin-only payroll foundation. Edit components, limits, percentages and taxable/exempt status.")
-
-    st.success("This section is visible only to Admin. It powers Auto Salary Split and future Tax Computation.")
+    st.markdown("### 💼 Salary Structure Master")
+    st.caption("Edit Sodexo, HRA, reimbursements, allowances, proof rules and taxable status.")
 
     structure_df = load_salary_structure_master()
 
     display_cols = [
         "component_name", "component_type", "formula_type", "percentage",
-        "max_limit", "basis", "taxable_status", "enabled",
-        "sort_order", "remarks"
+        "max_limit", "basis", "taxable_status", "proof_required",
+        "enabled", "sort_order", "remarks"
     ]
 
     edited_df = st.data_editor(
@@ -1637,13 +1724,14 @@ def render_salary_structure_master_panel():
                 "Taxable Status",
                 options=["Taxable", "Exempt", "Partial", "Conditional"]
             ),
+            "proof_required": st.column_config.CheckboxColumn("Proof Required"),
             "enabled": st.column_config.CheckboxColumn("Enabled"),
             "sort_order": st.column_config.NumberColumn("Sort Order", min_value=0, step=1),
             "remarks": st.column_config.TextColumn("Remarks"),
         }
     )
 
-    c1, c2, c3 = st.columns([1, 1, 1])
+    c1, c2, c3 = st.columns(3)
 
     with c1:
         if st.button("💾 Save Salary Structure", use_container_width=True):
@@ -1692,14 +1780,317 @@ def render_salary_structure_master_panel():
         )
         st.dataframe(split_df, use_container_width=True, hide_index=True)
 
-    st.markdown("---")
-    st.markdown("### Tax Computation Output Fields")
 
-    tax_fields = pd.DataFrame([
+def import_employee_master(df):
+    init_payroll_database()
+    emp_id_col = find_column(df, ["Employee ID", "EmployeeID", "Emp ID", "EmpCode"])
+    emp_name_col = find_column(df, ["Employee Name", "Name", "Emp Name"])
+    tax_regime_col = find_column(df, ["Tax Regime", "Regime"])
+    pan_col = find_column(df, ["PAN", "PAN No", "Pan No."])
+    gender_col = find_column(df, ["Gender"])
+    doj_col = find_column(df, ["Date of Joining", "DOJ"])
+    doe_col = find_column(df, ["Date of Exit", "DOE"])
+    dob_col = find_column(df, ["DOB", "Date of Birth"])
+    designation_col = find_column(df, ["Designation"])
+
+    if not emp_id_col:
+        return 0, "Employee ID column not found."
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    count = 0
+
+    for _, row in df.iterrows():
+        employee_id = text_value(row, emp_id_col)
+        if not employee_id:
+            continue
+
+        cur.execute("""
+            INSERT OR REPLACE INTO employee_master (
+                employee_id, employee_name, tax_regime, pan_no, gender,
+                date_of_joining, date_of_exit, dob, designation, uploaded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            employee_id,
+            text_value(row, emp_name_col),
+            text_value(row, tax_regime_col),
+            text_value(row, pan_col),
+            text_value(row, gender_col),
+            text_value(row, doj_col),
+            text_value(row, doe_col),
+            text_value(row, dob_col),
+            text_value(row, designation_col),
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ))
+        count += 1
+
+    conn.commit()
+    conn.close()
+    return count, ""
+
+
+def import_salary_monthly(df, financial_year, salary_month, mode):
+    init_payroll_database()
+    emp_id_col = find_column(df, ["Employee ID", "EmployeeID", "Emp ID", "EmpCode"])
+    emp_name_col = find_column(df, ["Employee Name", "Name", "Emp Name"])
+    gross_col = find_column(df, ["Gross Salary", "Gross", "Salary", "Annual Salary", "CTC"])
+    basic_col = find_column(df, ["Basic", "Basic Salary"])
+    hra_col = find_column(df, ["HRA"])
+    sodexo_col = find_column(df, ["Sodexo", "Meal Passes", "Meal Passess"])
+    tel_col = find_column(df, ["Telephone / Internet", "Telephone", "Internet"])
+    elec_col = find_column(df, ["Electricity Reimbursement", "Electricity"])
+    prof_col = find_column(df, ["Professional / Software", "Software", "Professional"])
+    skill_col = find_column(df, ["Skill Development"])
+    utility_col = find_column(df, ["Power & Utility Allowance", "Power Utility", "Utility Allowance"])
+    taxable_allowance_col = find_column(df, ["Taxable Allowance"])
+    ot_col = find_column(df, ["OT/PLI/Profit sharing", "OT", "PLI", "Profit sharing"])
+    exgratia_col = find_column(df, ["EXGRATIA", "Exgratia"])
+    gratuity_col = find_column(df, ["Gratuity"])
+    severance_col = find_column(df, ["Severance"])
+    leave_col = find_column(df, ["LeaveEncashment", "Leave Encashment"])
+    referral_col = find_column(df, ["Referralbonus", "Referral Bonus"])
+    other_col = find_column(df, ["OtherAdjustment", "Other Adjustment"])
+    total_income_col = find_column(df, ["Total Income From Salary", "Total Income from Salary"])
+
+    if not emp_id_col:
+        return 0, "Employee ID column not found."
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    if mode == "Overwrite Month":
+        cur.execute(
+            "DELETE FROM employee_salary_monthly WHERE financial_year = ? AND salary_month = ?",
+            (financial_year, salary_month)
+        )
+
+    count = 0
+
+    for _, row in df.iterrows():
+        employee_id = text_value(row, emp_id_col)
+        if not employee_id:
+            continue
+
+        cur.execute("""
+            INSERT INTO employee_salary_monthly (
+                employee_id, employee_name, financial_year, salary_month,
+                gross_salary, basic, hra, sodexo_meal_passes,
+                telephone_internet, electricity_reimbursement,
+                professional_software, skill_development, power_utility_allowance,
+                taxable_allowance, ot_pli_profit_sharing, exgratia, gratuity,
+                severance, leave_encashment, referral_bonus, other_adjustment,
+                total_income_from_salary, uploaded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            employee_id,
+            text_value(row, emp_name_col),
+            financial_year,
+            salary_month,
+            money_value(row, gross_col),
+            money_value(row, basic_col),
+            money_value(row, hra_col),
+            money_value(row, sodexo_col),
+            money_value(row, tel_col),
+            money_value(row, elec_col),
+            money_value(row, prof_col),
+            money_value(row, skill_col),
+            money_value(row, utility_col),
+            money_value(row, taxable_allowance_col),
+            money_value(row, ot_col),
+            money_value(row, exgratia_col),
+            money_value(row, gratuity_col),
+            money_value(row, severance_col),
+            money_value(row, leave_col),
+            money_value(row, referral_col),
+            money_value(row, other_col),
+            money_value(row, total_income_col),
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ))
+        count += 1
+
+    conn.commit()
+    conn.close()
+    return count, ""
+
+
+def import_tds_monthly(df, financial_year, salary_month, mode):
+    init_payroll_database()
+    emp_id_col = find_column(df, ["Employee ID", "EmployeeID", "Emp ID", "EmpCode"])
+    emp_name_col = find_column(df, ["Employee Name", "Name", "Emp Name"])
+    tds_col = find_column(df, ["TDS", "TDS Deducted", "Tax Deducted"])
+    tax1_col = find_column(df, ["Tax1"])
+    tax2_col = find_column(df, ["Tax2"])
+    tax3_col = find_column(df, ["Tax3"])
+    tax4_col = find_column(df, ["Tax4"])
+    tax5_col = find_column(df, ["Tax5"])
+
+    if not emp_id_col:
+        return 0, "Employee ID column not found."
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    if mode == "Overwrite Month":
+        cur.execute(
+            "DELETE FROM employee_tds_monthly WHERE financial_year = ? AND salary_month = ?",
+            (financial_year, salary_month)
+        )
+
+    count = 0
+
+    for _, row in df.iterrows():
+        employee_id = text_value(row, emp_id_col)
+        if not employee_id:
+            continue
+
+        cur.execute("""
+            INSERT INTO employee_tds_monthly (
+                employee_id, employee_name, financial_year, salary_month,
+                tds_deducted, tax1_total_tax, tax2_cess_4_percent,
+                tax3_total_tax_after_cess, tax4_total_deduction,
+                tax5_net_deductible, uploaded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            employee_id,
+            text_value(row, emp_name_col),
+            financial_year,
+            salary_month,
+            money_value(row, tds_col),
+            money_value(row, tax1_col),
+            money_value(row, tax2_col),
+            money_value(row, tax3_col),
+            money_value(row, tax4_col),
+            money_value(row, tax5_col),
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ))
+        count += 1
+
+    conn.commit()
+    conn.close()
+    return count, ""
+
+
+def render_payroll_upload_engine():
+    st.markdown("### 📤 Payroll Upload Engine")
+    st.caption("Upload Employee Master, Salary Computation Excel, and TDS Excel.")
+
+    upload_type = st.selectbox(
+        "Upload Type",
+        ["Employee Master", "Salary Computation", "TDS Deduction"],
+        key="payroll_upload_type"
+    )
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        financial_year = st.text_input("Financial Year", value="2025-26")
+    with c2:
+        salary_month = st.selectbox(
+            "Month",
+            ["April", "May", "June", "July", "August", "September", "October", "November", "December", "January", "February", "March"],
+            index=0
+        )
+    with c3:
+        mode = st.selectbox("Import Mode", ["Append", "Overwrite Month"])
+
+    uploaded_file = st.file_uploader(
+        "Upload Excel file",
+        type=["xlsx", "xls"],
+        key="payroll_excel_upload"
+    )
+
+    if uploaded_file is not None:
+        try:
+            xl = pd.ExcelFile(uploaded_file)
+            sheet_name = st.selectbox("Select Sheet", xl.sheet_names)
+            upload_df = pd.read_excel(uploaded_file, sheet_name=sheet_name).fillna("")
+
+            st.markdown("#### Preview")
+            st.dataframe(upload_df.head(50), use_container_width=True)
+            st.caption("Showing first 50 rows.")
+
+            st.markdown("#### Detected Columns")
+            st.write(", ".join([str(c) for c in upload_df.columns]))
+
+            if st.button("✅ Import to Database", use_container_width=True):
+                if upload_type == "Employee Master":
+                    count, err = import_employee_master(upload_df)
+                elif upload_type == "Salary Computation":
+                    count, err = import_salary_monthly(upload_df, financial_year, salary_month, mode)
+                else:
+                    count, err = import_tds_monthly(upload_df, financial_year, salary_month, mode)
+
+                if err:
+                    st.error(err)
+                else:
+                    st.success(f"{count} row(s) imported successfully for {upload_type}.")
+
+        except Exception as e:
+            st.error(f"Unable to process uploaded file: {e}")
+
+
+def render_payroll_data_preview():
+    st.markdown("### 📊 Payroll Data Preview")
+
+    init_payroll_database()
+    conn = get_db_connection()
+
+    tab1, tab2, tab3, tab4 = st.tabs(["Employee Master", "Salary Monthly", "TDS Monthly", "Tax Computation"])
+
+    with tab1:
+        df = pd.read_sql_query("SELECT * FROM employee_master ORDER BY employee_id", conn)
+        st.dataframe(df, use_container_width=True)
+
+    with tab2:
+        df = pd.read_sql_query("SELECT * FROM employee_salary_monthly ORDER BY uploaded_at DESC, employee_id", conn)
+        st.dataframe(df, use_container_width=True)
+
+    with tab3:
+        df = pd.read_sql_query("SELECT * FROM employee_tds_monthly ORDER BY uploaded_at DESC, employee_id", conn)
+        st.dataframe(df, use_container_width=True)
+
+    with tab4:
+        df = pd.read_sql_query("SELECT * FROM employee_tax_computation ORDER BY computed_at DESC, employee_id", conn)
+        st.dataframe(df, use_container_width=True)
+
+    conn.close()
+
+
+def render_tax_output_fields():
+    st.markdown("### 🧾 Income Breakup + Tax Output Fields")
+
+    fields = pd.DataFrame([
+        {"Field": "Employee ID", "Meaning": "Unique employee mapping"},
+        {"Field": "Employee Name", "Meaning": "Employee identification"},
+        {"Field": "Tax Regime", "Meaning": "Old/New tax regime"},
+        {"Field": "PAN No.", "Meaning": "Tax compliance"},
+        {"Field": "Gender", "Meaning": "Reporting/reference"},
+        {"Field": "Date of Joining", "Meaning": "Payroll period calculation"},
+        {"Field": "Date of Exit", "Meaning": "Final settlement logic"},
+        {"Field": "DOB", "Meaning": "Age-based tax logic"},
+        {"Field": "Designation", "Meaning": "Employee role/reference"},
+        {"Field": "Basic Salary", "Meaning": "Base salary component"},
+        {"Field": "HRA", "Meaning": "House Rent Allowance"},
+        {"Field": "Sodexo / Meal Passes", "Meaning": "Meal benefit component"},
+        {"Field": "Telephone / Internet", "Meaning": "Conditional exemption up to approved proof"},
+        {"Field": "Electricity Reimbursement", "Meaning": "Conditional exemption up to approved proof"},
+        {"Field": "Professional / Software", "Meaning": "Conditional exemption up to approved proof"},
+        {"Field": "Skill Development", "Meaning": "Conditional exemption up to approved proof"},
+        {"Field": "Power & Utility Allowance", "Meaning": "Conditional exemption up to approved proof"},
+        {"Field": "Taxable Allowance", "Meaning": "Remaining taxable component"},
+        {"Field": "OT / PLI / Profit Sharing", "Meaning": "Variable taxable income"},
+        {"Field": "EXGRATIA", "Meaning": "Additional taxable income"},
+        {"Field": "Gratuity", "Meaning": "Conditional tax treatment"},
+        {"Field": "Severance", "Meaning": "Exit settlement taxation"},
+        {"Field": "Leave Encashment", "Meaning": "Conditional exemption/taxability"},
+        {"Field": "Referral Bonus", "Meaning": "Taxable variable income"},
+        {"Field": "Other Adjustment", "Meaning": "Manual adjustment field"},
+        {"Field": "Previous Employer Income 12B/12BB", "Meaning": "Previous employer salary and TDS details"},
         {"Field": "Total Income from Salary", "Meaning": "Annual salary income before deductions"},
-        {"Field": "Allowances / Reimbursements", "Meaning": "Approved exempt/conditional reimbursements"},
-        {"Field": "Standard Deduction", "Meaning": "As per applicable tax regime/rules"},
+        {"Field": "Approved Allowances / Reimbursements", "Meaning": "Only approved proof-based exemptions"},
+        {"Field": "Standard Deduction", "Meaning": "As per applicable regime/rules"},
         {"Field": "Approved Investments", "Meaning": "Only approved employee declarations/proofs"},
+        {"Field": "Home Loan Deduction", "Meaning": "Approved home loan interest"},
+        {"Field": "Other Eligible Deductions", "Meaning": "Other approved deductions"},
         {"Field": "Taxable Salary", "Meaning": "Salary after applicable deductions/exemptions"},
         {"Field": "Tax1", "Meaning": "Total Tax"},
         {"Field": "Tax2", "Meaning": "Tax after adding 4% cess"},
@@ -1707,11 +2098,35 @@ def render_salary_structure_master_panel():
         {"Field": "Tax4", "Meaning": "Total Deduction"},
         {"Field": "Tax5", "Meaning": "Net Deductible"},
     ])
-    st.dataframe(tax_fields, use_container_width=True, hide_index=True)
+    st.dataframe(fields, use_container_width=True, hide_index=True)
 
 
-# Initialize DB early
-init_salary_database()
+def render_payroll_tax_engine_panel():
+    st.markdown("## 💼 Payroll & Tax Engine Setup")
+    st.info("Admin module: salary structure, payroll upload engine, TDS upload and payroll data preview.")
+
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "Salary Structure Master",
+        "Payroll Upload Engine",
+        "Payroll Data Preview",
+        "Income & Tax Fields"
+    ])
+
+    with tab1:
+        render_salary_structure_master_panel()
+
+    with tab2:
+        render_payroll_upload_engine()
+
+    with tab3:
+        render_payroll_data_preview()
+
+    with tab4:
+        render_tax_output_fields()
+
+
+# Initialize payroll DB early
+init_payroll_database()
 
 
 # =====================================================
@@ -1907,24 +2322,13 @@ with right:
                     else:
                         st.markdown(item["answer"])
 
-if st.session_state.role == "Admin":
+                    # Admin-only metadata
+                    if st.session_state.role == "Admin":
+                        st.caption(
+                            f"Source: {item.get('source','')} · "
+                            f"Similarity: {item.get('similarity',0):.2f}"
+                        )
 
-    st.markdown("---")
-
-    st.markdown("# 💼 Payroll & Tax Engine Setup")
-
-    st.info(
-        "New module added: Salary Structure Master. "
-        "Open the panel below to edit Sodexo, HRA, "
-        "reimbursements, allowances and tax computation fields."
-    )
-
-    with st.expander(
-        "💼 Salary Structure Master - NEW",
-        expanded=True
-    ):
-
-        render_salary_structure_master_panel()
     # Bottom chat input (always at the bottom, widget-style)
     user_query = st.chat_input("Type your question and press Enter… (e.g. What is NPS?)")
     if user_query and user_query.strip():
@@ -1945,6 +2349,10 @@ if st.session_state.role == "Admin":
 # =====================================================
 
 if st.session_state.role == "Admin":
+
+    with st.expander("💼 Payroll & Tax Engine Setup - NEW", expanded=True):
+        render_payroll_tax_engine_panel()
+
     with st.expander("Admin Panel: User Management"):
         st.markdown("### Reset Employee Password")
         reset_emp_id = st.text_input("Employee ID to reset", placeholder="Example: 1001")
