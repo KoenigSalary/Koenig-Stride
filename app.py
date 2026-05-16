@@ -2380,73 +2380,206 @@ def render_employee_declaration_portal():
 def render_admin_declaration_approval_panel():
     st.markdown("### ✅ Investment / Declaration Approval Panel")
     st.caption("Approve/reject employee investments, reimbursements, Meal Passes/Sodexo, and Form 12B/12BB.")
+
     df = load_employee_declarations()
+
     if df.empty:
         st.info("No employee declarations submitted yet.")
         return
+
     c1, c2, c3 = st.columns(3)
+
     with c1:
-        status_filter = st.selectbox("Status", ["All", "Pending", "Approved", "Rejected"], key="admin_decl_status_filter")
+        status_filter = st.selectbox(
+            "Status",
+            ["All", "Pending", "Approved", "Rejected", "Delete"],
+            key="admin_decl_status_filter"
+        )
+
     with c2:
-        section_filter = st.selectbox("Section", ["All"] + sorted(df["section"].astype(str).dropna().unique().tolist()), key="admin_decl_section_filter")
+        section_filter = st.selectbox(
+            "Section",
+            ["All"] + sorted(df["section"].astype(str).dropna().unique().tolist()),
+            key="admin_decl_section_filter"
+        )
+
     with c3:
-        employee_filter = st.text_input("Employee ID / Name", key="admin_decl_employee_filter")
+        employee_filter = st.text_input(
+            "Employee ID / Name",
+            key="admin_decl_employee_filter"
+        )
+
     filtered = df.copy()
+
     if status_filter != "All":
         filtered = filtered[filtered["status"] == status_filter]
+
     if section_filter != "All":
         filtered = filtered[filtered["section"] == section_filter]
+
     if employee_filter.strip():
         q = employee_filter.strip().lower()
-        filtered = filtered[filtered["employee_id"].astype(str).str.lower().str.contains(q) | filtered["employee_name"].astype(str).str.lower().str.contains(q)]
-    display_cols = ["id", "employee_id", "employee_name", "financial_year", "tax_regime", "declaration_type", "section", "investment_type", "claimed_amount", "eligible_limit", "excess_amount", "approved_amount", "status", "employee_remarks", "admin_remarks", "submitted_at", "approved_at"]
-    display_cols = [c for c in display_cols if c in filtered.columns]
-    st.dataframe(filtered[display_cols], use_container_width=True, hide_index=True)
-    st.markdown("---")
-    row_ids = filtered["id"].astype(int).tolist()
-    if not row_ids:
+        filtered = filtered[
+            filtered["employee_id"].astype(str).str.lower().str.contains(q, na=False) |
+            filtered["employee_name"].astype(str).str.lower().str.contains(q, na=False)
+        ]
+
+    if filtered.empty:
         st.info("No matching declarations.")
         return
-    selected_id = st.selectbox("Select Declaration ID", row_ids, key="approval_selected_id")
-    selected_row = filtered[filtered["id"] == selected_id].iloc[0]
-    a1, a2, a3 = st.columns(3)
-    with a1:
-        st.write(f"**Employee:** {selected_row.get('employee_id', '')} - {selected_row.get('employee_name', '')}")
-        st.write(f"**Section:** {selected_row.get('section', '')}")
-    with a2:
-        st.write(f"**Claimed:** ₹{float(selected_row.get('claimed_amount', 0) or 0):,.2f}")
-        st.write(f"**Eligible Limit:** ₹{float(selected_row.get('eligible_limit', 0) or 0):,.2f}")
-    with a3:
-        proof_path = str(selected_row.get("proof_file", "") or "")
-        if proof_path:
-            try:
-                with open(proof_path, "rb") as f:
-                    st.download_button("Download Proof", f.read(), file_name=Path(proof_path).name, use_container_width=True)
-            except Exception:
-                st.warning("Proof file not accessible.")
-        else:
-            st.write("**Proof:** Not uploaded")
-    approved_amount = st.number_input("Approved Amount", min_value=0.0, step=1000.0, value=float(selected_row.get("claimed_amount", 0) or 0), key="approval_amount")
-    admin_remarks = st.text_area("Admin Remarks", value=str(selected_row.get("admin_remarks", "") or ""), key="approval_remarks")
-    b1, b2, b3 = st.columns(3)
-    with b1:
-        if st.button("✅ Approve", use_container_width=True):
-            update_declaration_status(selected_id, "Approved", approved_amount, admin_remarks, st.session_state.employee_name or "Admin")
-            st.success("Declaration approved.")
-            st.rerun()
-    with b2:
-        if st.button("❌ Reject", use_container_width=True):
-            update_declaration_status(selected_id, "Rejected", 0, admin_remarks, st.session_state.employee_name or "Admin")
-            st.warning("Declaration rejected.")
-            st.rerun()
-    with b3:
-        if st.button("🗑️ Delete", use_container_width=True):
-            delete_declaration(selected_id)
-            st.error("Declaration deleted.")
-            st.rerun()
-    csv = filtered.to_csv(index=False).encode("utf-8")
-    st.download_button("⬇️ Download Approval Data CSV", csv, file_name="employee_declaration_approval_data.csv", mime="text/csv", use_container_width=True)
 
+    st.markdown("#### Update Status Directly")
+
+    editable_cols = [
+        "id", "employee_id", "employee_name", "financial_year", "tax_regime",
+        "declaration_type", "section", "investment_type",
+        "claimed_amount", "eligible_limit", "excess_amount",
+        "approved_amount", "status", "employee_remarks",
+        "admin_remarks", "submitted_at", "approved_at"
+    ]
+    editable_cols = [c for c in editable_cols if c in filtered.columns]
+
+    edit_df = filtered[editable_cols].copy()
+
+    # Keep original values for comparison after editing
+    original_status_map = dict(zip(edit_df["id"], edit_df["status"]))
+    original_approved_map = dict(zip(edit_df["id"], edit_df["approved_amount"]))
+    original_remarks_map = dict(zip(edit_df["id"], edit_df["admin_remarks"]))
+
+    edited_df = st.data_editor(
+        edit_df,
+        use_container_width=True,
+        hide_index=True,
+        num_rows="fixed",
+        key="admin_declaration_status_editor",
+        disabled=[
+            col for col in editable_cols
+            if col not in ["status", "approved_amount", "admin_remarks"]
+        ],
+        column_config={
+            "id": st.column_config.NumberColumn("ID", disabled=True),
+            "employee_id": st.column_config.TextColumn("Employee ID", disabled=True),
+            "employee_name": st.column_config.TextColumn("Employee Name", disabled=True),
+            "financial_year": st.column_config.TextColumn("Tax Year", disabled=True),
+            "tax_regime": st.column_config.TextColumn("Tax Regime", disabled=True),
+            "declaration_type": st.column_config.TextColumn("Declaration Type", disabled=True),
+            "section": st.column_config.TextColumn("Section", disabled=True),
+            "investment_type": st.column_config.TextColumn("Investment Type", disabled=True),
+            "claimed_amount": st.column_config.NumberColumn("Claimed Amount", disabled=True),
+            "eligible_limit": st.column_config.NumberColumn("Eligible Limit", disabled=True),
+            "excess_amount": st.column_config.NumberColumn("Excess Amount", disabled=True),
+            "approved_amount": st.column_config.NumberColumn("Approved Amount", min_value=0.0, step=1000.0),
+            "status": st.column_config.SelectboxColumn(
+                "Status",
+                options=["Pending", "Approved", "Rejected", "Delete"],
+                required=True
+            ),
+            "employee_remarks": st.column_config.TextColumn("Employee Remarks", disabled=True),
+            "admin_remarks": st.column_config.TextColumn("Admin Remarks"),
+            "submitted_at": st.column_config.TextColumn("Submitted At", disabled=True),
+            "approved_at": st.column_config.TextColumn("Approved At", disabled=True),
+        }
+    )
+
+    st.info(
+        "Change Status from the dropdown. Use Approved / Rejected / Delete. "
+        "Then click Submit Updates below."
+    )
+
+    if st.button("✅ Submit Updates", use_container_width=True):
+        updated_count = 0
+        deleted_count = 0
+
+        for _, row in edited_df.iterrows():
+            row_id = int(row["id"])
+            new_status = str(row.get("status", "Pending")).strip()
+            new_approved_amount = float(row.get("approved_amount", 0) or 0)
+            new_admin_remarks = str(row.get("admin_remarks", "") or "")
+
+            old_status = str(original_status_map.get(row_id, ""))
+            old_approved = float(original_approved_map.get(row_id, 0) or 0)
+            old_remarks = str(original_remarks_map.get(row_id, "") or "")
+
+            changed = (
+                new_status != old_status or
+                new_approved_amount != old_approved or
+                new_admin_remarks != old_remarks
+            )
+
+            if not changed:
+                continue
+
+            if new_status == "Delete":
+                delete_declaration(row_id)
+                deleted_count += 1
+            elif new_status == "Rejected":
+                update_declaration_status(
+                    row_id,
+                    "Rejected",
+                    0,
+                    new_admin_remarks,
+                    st.session_state.employee_name or "Admin"
+                )
+                updated_count += 1
+            elif new_status == "Approved":
+                update_declaration_status(
+                    row_id,
+                    "Approved",
+                    new_approved_amount,
+                    new_admin_remarks,
+                    st.session_state.employee_name or "Admin"
+                )
+                updated_count += 1
+            else:
+                update_declaration_status(
+                    row_id,
+                    "Pending",
+                    new_approved_amount,
+                    new_admin_remarks,
+                    st.session_state.employee_name or "Admin"
+                )
+                updated_count += 1
+
+        st.success(f"Updates submitted. Updated: {updated_count}, Deleted: {deleted_count}")
+        st.rerun()
+
+    st.markdown("---")
+    st.markdown("#### Proof Download")
+
+    proof_df = filtered[["id", "employee_id", "employee_name", "section", "proof_file"]].copy()
+    proof_df = proof_df[proof_df["proof_file"].astype(str).str.strip() != ""]
+
+    if proof_df.empty:
+        st.info("No proof files available for the current filter.")
+    else:
+        proof_id = st.selectbox(
+            "Select Declaration ID for Proof Download",
+            proof_df["id"].astype(int).tolist(),
+            key="proof_download_id"
+        )
+
+        proof_path = str(proof_df[proof_df["id"] == proof_id].iloc[0]["proof_file"])
+
+        try:
+            with open(proof_path, "rb") as f:
+                st.download_button(
+                    "⬇️ Download Selected Proof",
+                    f.read(),
+                    file_name=Path(proof_path).name,
+                    use_container_width=True
+                )
+        except Exception:
+            st.warning("Proof file not accessible.")
+
+    st.markdown("---")
+    csv = filtered.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "⬇️ Download Approval Data CSV",
+        csv,
+        file_name="employee_declaration_approval_data.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
 
 def render_employee_tax_summary_snapshot():
     st.markdown("### 📊 My Tax Declaration Snapshot")
