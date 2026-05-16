@@ -1341,9 +1341,11 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+
 def init_salary_database():
     conn = get_db_connection()
     cur = conn.cursor()
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS salary_structure_master (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1360,39 +1362,67 @@ def init_salary_database():
             updated_at TEXT DEFAULT ''
         )
     """)
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS employee_salary_monthly (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            employee_id TEXT, employee_name TEXT, financial_year TEXT, month TEXT,
-            gross_salary REAL DEFAULT 0, basic REAL DEFAULT 0, hra REAL DEFAULT 0,
-            sodexo REAL DEFAULT 0, telephone_internet REAL DEFAULT 0,
-            electricity REAL DEFAULT 0, professional_software REAL DEFAULT 0,
-            skill_development REAL DEFAULT 0, power_utility REAL DEFAULT 0,
-            taxable_allowance REAL DEFAULT 0, uploaded_at TEXT DEFAULT ''
+            employee_id TEXT,
+            employee_name TEXT,
+            financial_year TEXT,
+            month TEXT,
+            gross_salary REAL DEFAULT 0,
+            basic REAL DEFAULT 0,
+            hra REAL DEFAULT 0,
+            sodexo REAL DEFAULT 0,
+            telephone_internet REAL DEFAULT 0,
+            electricity REAL DEFAULT 0,
+            professional_software REAL DEFAULT 0,
+            skill_development REAL DEFAULT 0,
+            power_utility REAL DEFAULT 0,
+            taxable_allowance REAL DEFAULT 0,
+            uploaded_at TEXT DEFAULT ''
         )
     """)
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS employee_tds_monthly (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            employee_id TEXT, employee_name TEXT, financial_year TEXT, month TEXT,
-            tds_deducted REAL DEFAULT 0, uploaded_at TEXT DEFAULT ''
+            employee_id TEXT,
+            employee_name TEXT,
+            financial_year TEXT,
+            month TEXT,
+            tds_deducted REAL DEFAULT 0,
+            uploaded_at TEXT DEFAULT ''
         )
     """)
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS employee_investments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            employee_id TEXT, employee_name TEXT, financial_year TEXT,
-            declaration_type TEXT DEFAULT '', section TEXT DEFAULT '', investment_type TEXT DEFAULT '',
-            claimed_amount REAL DEFAULT 0, approved_amount REAL DEFAULT 0,
-            status TEXT DEFAULT 'Pending', proof_file TEXT DEFAULT '',
-            employee_remarks TEXT DEFAULT '', admin_remarks TEXT DEFAULT '',
-            submitted_at TEXT DEFAULT '', approved_at TEXT DEFAULT '', approved_by TEXT DEFAULT ''
+            employee_id TEXT,
+            employee_name TEXT,
+            financial_year TEXT,
+            declaration_type TEXT DEFAULT '',
+            section TEXT DEFAULT '',
+            investment_type TEXT DEFAULT '',
+            claimed_amount REAL DEFAULT 0,
+            approved_amount REAL DEFAULT 0,
+            status TEXT DEFAULT 'Pending',
+            proof_file TEXT DEFAULT '',
+            employee_remarks TEXT DEFAULT '',
+            admin_remarks TEXT DEFAULT '',
+            submitted_at TEXT DEFAULT '',
+            approved_at TEXT DEFAULT '',
+            approved_by TEXT DEFAULT ''
         )
     """)
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS employee_tax_computation (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            employee_id TEXT, employee_name TEXT, financial_year TEXT,
+            employee_id TEXT,
+            employee_name TEXT,
+            financial_year TEXT,
             total_income_from_salary REAL DEFAULT 0,
             allowances_reimbursements REAL DEFAULT 0,
             standard_deduction REAL DEFAULT 0,
@@ -1406,116 +1436,283 @@ def init_salary_database():
             computed_at TEXT DEFAULT ''
         )
     """)
-    conn.commit(); conn.close(); seed_salary_structure_master()
+
+    conn.commit()
+    conn.close()
+
+    seed_salary_structure_master()
+
 
 def seed_salary_structure_master():
-    conn=get_db_connection(); cur=conn.cursor()
-    rows=[
-        ('Basic','Salary Component','Manual / Upload',0,0,'Monthly','Taxable',1,1,'Base salary component'),
-        ('HRA','Allowance','50% of Basic',50,0,'Monthly','Partial',1,2,'House Rent Allowance'),
-        ('Sodexo / Meal Passes','Reimbursement','Fixed',0,105600,'Yearly','Exempt',1,3,'Editable yearly meal pass limit'),
-        ('Telephone / Internet','Reimbursement','Percentage',3,0,'Yearly','Exempt',1,4,'3% configurable'),
-        ('Electricity Reimbursement','Reimbursement','Percentage',3,0,'Yearly','Exempt',1,5,'3% configurable'),
-        ('Professional / Software','Reimbursement','Percentage',2,0,'Yearly','Exempt',1,6,'2% configurable'),
-        ('Skill Development','Reimbursement','Percentage',2,0,'Yearly','Exempt',1,7,'2% configurable'),
-        ('Power & Utility Allowance','Allowance','Percentage',2,0,'Yearly','Exempt',1,8,'2% configurable'),
-        ('Taxable Allowance','Allowance','Balance',0,0,'Monthly','Taxable',1,9,'Balance after configured components'),
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    default_rows = [
+        ("Basic", "Salary Component", "Manual / Upload", 0, 0, "Monthly", "Taxable", 1, 1, "Base salary component"),
+        ("HRA", "Allowance", "50% of Basic", 50, 0, "Monthly", "Partial", 1, 2, "HRA = 50% of Basic"),
+        ("Sodexo / Meal Passes", "Reimbursement", "Fixed", 0, 105600, "Yearly", "Exempt", 1, 3, "Editable yearly meal pass limit"),
+        ("Telephone / Internet", "Reimbursement", "Percentage", 3, 0, "Yearly", "Exempt", 1, 4, "Editable 3%"),
+        ("Electricity Reimbursement", "Reimbursement", "Percentage", 3, 0, "Yearly", "Exempt", 1, 5, "Editable 3%"),
+        ("Professional / Software", "Reimbursement", "Percentage", 2, 0, "Yearly", "Exempt", 1, 6, "Editable 2%"),
+        ("Skill Development", "Reimbursement", "Percentage", 2, 0, "Yearly", "Exempt", 1, 7, "Editable 2%"),
+        ("Power & Utility Allowance", "Allowance", "Percentage", 2, 0, "Yearly", "Exempt", 1, 8, "Editable 2%"),
+        ("Taxable Allowance", "Allowance", "Balance", 0, 0, "Monthly", "Taxable", 1, 9, "Balance after components"),
     ]
-    for r in rows:
-        cur.execute("""INSERT OR IGNORE INTO salary_structure_master
-        (component_name, component_type, formula_type, percentage, max_limit, basis, taxable_status, enabled, sort_order, remarks, updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)""", (*r, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-    conn.commit(); conn.close()
+
+    for row in default_rows:
+        cur.execute("""
+            INSERT OR IGNORE INTO salary_structure_master (
+                component_name, component_type, formula_type, percentage,
+                max_limit, basis, taxable_status, enabled, sort_order, remarks, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (*row, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+
+    conn.commit()
+    conn.close()
+
 
 def load_salary_structure_master():
     init_salary_database()
-    conn=get_db_connection()
-    df=pd.read_sql_query('SELECT * FROM salary_structure_master ORDER BY sort_order, id', conn)
-    conn.close(); return df
+    conn = get_db_connection()
+    df = pd.read_sql_query(
+        "SELECT * FROM salary_structure_master ORDER BY sort_order, id",
+        conn
+    )
+    conn.close()
+    return df
+
 
 def save_salary_structure_master(df):
-    init_salary_database(); save_df=df.copy().fillna('')
-    for col in ['component_name','component_type','formula_type','percentage','max_limit','basis','taxable_status','enabled','sort_order','remarks']:
-        if col not in save_df.columns: save_df[col]=''
-    save_df['percentage']=pd.to_numeric(save_df['percentage'], errors='coerce').fillna(0)
-    save_df['max_limit']=pd.to_numeric(save_df['max_limit'], errors='coerce').fillna(0)
-    save_df['enabled']=save_df['enabled'].apply(lambda x: 1 if str(x).lower() in ['1','true','yes','enabled'] else 0)
-    save_df['sort_order']=pd.to_numeric(save_df['sort_order'], errors='coerce').fillna(0).astype(int)
-    conn=get_db_connection(); cur=conn.cursor(); cur.execute('DELETE FROM salary_structure_master')
-    for _,row in save_df.iterrows():
-        name=str(row['component_name']).strip()
-        if not name: continue
-        cur.execute("""INSERT INTO salary_structure_master
-        (component_name, component_type, formula_type, percentage, max_limit, basis, taxable_status, enabled, sort_order, remarks, updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)""", (name, str(row['component_type']).strip(), str(row['formula_type']).strip(), float(row['percentage']), float(row['max_limit']), str(row['basis']).strip(), str(row['taxable_status']).strip(), int(row['enabled']), int(row['sort_order']), str(row['remarks']).strip(), datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-    conn.commit(); conn.close()
+    init_salary_database()
+
+    required_cols = [
+        "component_name", "component_type", "formula_type", "percentage",
+        "max_limit", "basis", "taxable_status", "enabled",
+        "sort_order", "remarks"
+    ]
+
+    save_df = df.copy().fillna("")
+
+    for col in required_cols:
+        if col not in save_df.columns:
+            save_df[col] = ""
+
+    save_df["percentage"] = pd.to_numeric(save_df["percentage"], errors="coerce").fillna(0)
+    save_df["max_limit"] = pd.to_numeric(save_df["max_limit"], errors="coerce").fillna(0)
+    save_df["enabled"] = save_df["enabled"].apply(
+        lambda x: 1 if str(x).strip().lower() in ["1", "true", "yes", "enabled"] else 0
+    )
+    save_df["sort_order"] = pd.to_numeric(save_df["sort_order"], errors="coerce").fillna(0).astype(int)
+    save_df["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM salary_structure_master")
+
+    for _, row in save_df.iterrows():
+        component_name = str(row["component_name"]).strip()
+        if not component_name:
+            continue
+
+        cur.execute("""
+            INSERT INTO salary_structure_master (
+                component_name, component_type, formula_type, percentage,
+                max_limit, basis, taxable_status, enabled, sort_order, remarks, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            component_name,
+            str(row["component_type"]).strip(),
+            str(row["formula_type"]).strip(),
+            float(row["percentage"]),
+            float(row["max_limit"]),
+            str(row["basis"]).strip(),
+            str(row["taxable_status"]).strip(),
+            int(row["enabled"]),
+            int(row["sort_order"]),
+            str(row["remarks"]).strip(),
+            str(row["updated_at"]).strip(),
+        ))
+
+    conn.commit()
+    conn.close()
+
 
 def calculate_salary_split(annual_salary, basic_percent=40):
-    structure_df=load_salary_structure_master(); annual_salary=float(annual_salary or 0); basic=round(annual_salary*basic_percent/100,2)
-    result={'Annual Salary':annual_salary,'Basic':basic,'HRA':0,'Sodexo / Meal Passes':0,'Telephone / Internet':0,'Electricity Reimbursement':0,'Professional / Software':0,'Skill Development':0,'Power & Utility Allowance':0,'Taxable Allowance':0,'Total Configured Components':0}
-    for _,row in structure_df.iterrows():
-        if int(row.get('enabled',1))!=1: continue
-        component=str(row.get('component_name','')).strip(); formula=str(row.get('formula_type','')).strip().lower(); pct=float(row.get('percentage',0) or 0); limit=float(row.get('max_limit',0) or 0)
-        if component=='Basic': result[component]=basic
-        elif component=='HRA': result[component]=round(basic*pct/100,2)
-        elif component=='Taxable Allowance': continue
-        elif formula=='fixed': result[component]=round(limit,2)
-        elif formula=='percentage':
-            val=annual_salary*pct/100
-            if limit>0: val=min(val,limit)
-            result[component]=round(val,2)
-        elif formula=='50% of basic': result[component]=round(basic*pct/100,2)
-    total=sum(v for k,v in result.items() if k not in ['Annual Salary','Taxable Allowance','Total Configured Components'])
-    result['Total Configured Components']=round(total,2); result['Taxable Allowance']=round(max(annual_salary-total,0),2)
+    structure_df = load_salary_structure_master()
+    annual_salary = float(annual_salary or 0)
+    basic = round(annual_salary * basic_percent / 100, 2)
+
+    result = {
+        "Annual Salary": annual_salary,
+        "Basic": basic,
+        "HRA": 0,
+        "Sodexo / Meal Passes": 0,
+        "Telephone / Internet": 0,
+        "Electricity Reimbursement": 0,
+        "Professional / Software": 0,
+        "Skill Development": 0,
+        "Power & Utility Allowance": 0,
+        "Taxable Allowance": 0,
+        "Total Configured Components": 0,
+    }
+
+    for _, row in structure_df.iterrows():
+        if int(row.get("enabled", 1)) != 1:
+            continue
+
+        component = str(row.get("component_name", "")).strip()
+        formula_type = str(row.get("formula_type", "")).strip().lower()
+        percentage = float(row.get("percentage", 0) or 0)
+        max_limit = float(row.get("max_limit", 0) or 0)
+
+        if component == "Basic":
+            result[component] = basic
+
+        elif component == "HRA":
+            result[component] = round(basic * percentage / 100, 2)
+
+        elif component == "Taxable Allowance":
+            continue
+
+        elif formula_type == "fixed":
+            result[component] = round(max_limit, 2)
+
+        elif formula_type == "percentage":
+            calculated = annual_salary * percentage / 100
+            if max_limit > 0:
+                calculated = min(calculated, max_limit)
+            result[component] = round(calculated, 2)
+
+        elif formula_type == "50% of basic":
+            result[component] = round(basic * percentage / 100, 2)
+
+    component_total = sum(
+        v for k, v in result.items()
+        if k not in ["Annual Salary", "Taxable Allowance", "Total Configured Components"]
+    )
+
+    result["Total Configured Components"] = round(component_total, 2)
+    result["Taxable Allowance"] = round(max(annual_salary - component_total, 0), 2)
+
     return result
 
+
 def render_salary_structure_master_panel():
-    st.markdown('### 💼 Salary Structure Master')
-    st.caption('Admin can configure salary components, formulas, thresholds, taxable status and enable/disable components.')
-    df=load_salary_structure_master()
-    cols=['component_name','component_type','formula_type','percentage','max_limit','basis','taxable_status','enabled','sort_order','remarks']
-    edited=st.data_editor(df[cols], use_container_width=True, num_rows='dynamic', hide_index=True, key='salary_structure_editor', column_config={
-        'component_name': st.column_config.TextColumn('Component', required=True),
-        'component_type': st.column_config.SelectboxColumn('Type', options=['Salary Component','Allowance','Reimbursement','Deduction','Other']),
-        'formula_type': st.column_config.SelectboxColumn('Formula', options=['Manual / Upload','Fixed','Percentage','50% of Basic','Balance','Formula']),
-        'percentage': st.column_config.NumberColumn('Percentage', min_value=0.0, step=0.5),
-        'max_limit': st.column_config.NumberColumn('Max Limit', min_value=0.0, step=1000.0),
-        'basis': st.column_config.SelectboxColumn('Basis', options=['Monthly','Yearly','Per Claim','As Approved']),
-        'taxable_status': st.column_config.SelectboxColumn('Taxable Status', options=['Taxable','Exempt','Partial','Conditional']),
-        'enabled': st.column_config.CheckboxColumn('Enabled'),
-        'sort_order': st.column_config.NumberColumn('Sort Order', min_value=0, step=1),
-        'remarks': st.column_config.TextColumn('Remarks'),
-    })
-    c1,c2,c3=st.columns(3)
+    st.markdown("## 💼 Salary Structure Master")
+    st.caption("Admin-only payroll foundation. Edit components, limits, percentages and taxable/exempt status.")
+
+    st.success("This section is visible only to Admin. It powers Auto Salary Split and future Tax Computation.")
+
+    structure_df = load_salary_structure_master()
+
+    display_cols = [
+        "component_name", "component_type", "formula_type", "percentage",
+        "max_limit", "basis", "taxable_status", "enabled",
+        "sort_order", "remarks"
+    ]
+
+    edited_df = st.data_editor(
+        structure_df[display_cols],
+        use_container_width=True,
+        num_rows="dynamic",
+        hide_index=True,
+        key="salary_structure_editor",
+        column_config={
+            "component_name": st.column_config.TextColumn("Component", required=True),
+            "component_type": st.column_config.SelectboxColumn(
+                "Type",
+                options=["Salary Component", "Allowance", "Reimbursement", "Deduction", "Other"]
+            ),
+            "formula_type": st.column_config.SelectboxColumn(
+                "Formula",
+                options=["Manual / Upload", "Fixed", "Percentage", "50% of Basic", "Balance", "Formula"]
+            ),
+            "percentage": st.column_config.NumberColumn("Percentage", min_value=0.0, step=0.5),
+            "max_limit": st.column_config.NumberColumn("Max Limit", min_value=0.0, step=1000.0),
+            "basis": st.column_config.SelectboxColumn(
+                "Basis",
+                options=["Monthly", "Yearly", "Per Claim", "As Approved"]
+            ),
+            "taxable_status": st.column_config.SelectboxColumn(
+                "Taxable Status",
+                options=["Taxable", "Exempt", "Partial", "Conditional"]
+            ),
+            "enabled": st.column_config.CheckboxColumn("Enabled"),
+            "sort_order": st.column_config.NumberColumn("Sort Order", min_value=0, step=1),
+            "remarks": st.column_config.TextColumn("Remarks"),
+        }
+    )
+
+    c1, c2, c3 = st.columns([1, 1, 1])
+
     with c1:
-        if st.button('💾 Save Salary Structure', use_container_width=True): save_salary_structure_master(edited); st.success('Salary Structure Master saved successfully.')
+        if st.button("💾 Save Salary Structure", use_container_width=True):
+            save_salary_structure_master(edited_df)
+            st.success("Salary Structure Master saved successfully.")
+
     with c2:
-        st.download_button('⬇️ Download Structure CSV', edited.to_csv(index=False).encode('utf-8'), file_name='salary_structure_master.csv', mime='text/csv', use_container_width=True)
+        csv = edited_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "⬇️ Download Structure CSV",
+            csv,
+            file_name="salary_structure_master.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
     with c3:
-        if st.button('🔄 Reload Default Missing Components', use_container_width=True): seed_salary_structure_master(); st.success('Default missing components reloaded.')
-    st.markdown('---'); st.markdown('### 🧮 Auto Salary Split Preview')
-    c1,c2=st.columns(2)
-    with c1: annual_salary=st.number_input('Annual Salary / CTC', min_value=0.0, step=10000.0, value=1200000.0)
-    with c2: basic_percent=st.number_input('Basic % of Annual Salary', min_value=0.0, max_value=100.0, step=1.0, value=40.0)
-    if st.button('Calculate Salary Split', use_container_width=True):
-        res=calculate_salary_split(annual_salary,basic_percent)
-        st.dataframe(pd.DataFrame([{'Component':k,'Annual Amount':v,'Monthly Amount':round(v/12,2)} for k,v in res.items()]), use_container_width=True, hide_index=True)
-    st.markdown('---'); st.markdown('### Tax Computation Output Fields')
-    tax_fields=pd.DataFrame([
-        {'Field':'Total Income from Salary','Meaning':'Annual salary income before deductions'},
-        {'Field':'Allowances / Reimbursements','Meaning':'Approved exempt or conditional reimbursements'},
-        {'Field':'Standard Deduction','Meaning':'As per applicable tax regime/rules'},
-        {'Field':'Approved Investments','Meaning':'Only approved employee declarations/proofs'},
-        {'Field':'Taxable Salary','Meaning':'Salary after applicable deductions/exemptions'},
-        {'Field':'Tax1','Meaning':'Total Tax'},
-        {'Field':'Tax2','Meaning':'Tax after adding 4% cess'},
-        {'Field':'Tax3','Meaning':'Total Tax after Cess'},
-        {'Field':'Tax4','Meaning':'Total Deduction'},
-        {'Field':'Tax5','Meaning':'Net Deductible'},
+        if st.button("🔄 Reload Default Components", use_container_width=True):
+            seed_salary_structure_master()
+            st.success("Default components checked/reloaded.")
+
+    st.markdown("---")
+    st.markdown("### 🧮 Auto Salary Split Preview")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        annual_salary = st.number_input(
+            "Annual Salary / CTC",
+            min_value=0.0,
+            step=10000.0,
+            value=1200000.0
+        )
+    with c2:
+        basic_percent = st.number_input(
+            "Basic % of Annual Salary",
+            min_value=0.0,
+            max_value=100.0,
+            step=1.0,
+            value=40.0
+        )
+
+    if st.button("Calculate Salary Split", use_container_width=True):
+        split_result = calculate_salary_split(annual_salary, basic_percent)
+        split_df = pd.DataFrame(
+            [{"Component": k, "Annual Amount": v, "Monthly Amount": round(v / 12, 2)} for k, v in split_result.items()]
+        )
+        st.dataframe(split_df, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+    st.markdown("### Tax Computation Output Fields")
+
+    tax_fields = pd.DataFrame([
+        {"Field": "Total Income from Salary", "Meaning": "Annual salary income before deductions"},
+        {"Field": "Allowances / Reimbursements", "Meaning": "Approved exempt/conditional reimbursements"},
+        {"Field": "Standard Deduction", "Meaning": "As per applicable tax regime/rules"},
+        {"Field": "Approved Investments", "Meaning": "Only approved employee declarations/proofs"},
+        {"Field": "Taxable Salary", "Meaning": "Salary after applicable deductions/exemptions"},
+        {"Field": "Tax1", "Meaning": "Total Tax"},
+        {"Field": "Tax2", "Meaning": "Tax after adding 4% cess"},
+        {"Field": "Tax3", "Meaning": "Total Tax after Cess"},
+        {"Field": "Tax4", "Meaning": "Total Deduction"},
+        {"Field": "Tax5", "Meaning": "Net Deductible"},
     ])
     st.dataframe(tax_fields, use_container_width=True, hide_index=True)
 
+
+# Initialize DB early
 init_salary_database()
+
 
 # =====================================================
 # LOGOUT
@@ -1712,6 +1909,14 @@ with right:
 
                     # Admin-only metadata
                     if st.session_state.role == "Admin":
+
+    st.markdown("---")
+    st.markdown("# 💼 Payroll & Tax Engine Setup")
+    st.info("New module added: Salary Structure Master. Open the panel below to edit Sodexo, HRA, reimbursements, allowances and tax computation fields.")
+
+    with st.expander("💼 Salary Structure Master - NEW", expanded=True):
+        render_salary_structure_master_panel()
+
                         st.caption(
                             f"Source: {item.get('source','')} · "
                             f"Similarity: {item.get('similarity',0):.2f}"
