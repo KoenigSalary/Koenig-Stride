@@ -2379,6 +2379,64 @@ def render_employee_declaration_portal():
         m3.metric("Rejected Amount", f"₹{rejected:,.0f}")
 
 
+
+def render_inline_proof_viewer(proof_path):
+    proof_path = str(proof_path or "").strip()
+
+    if not proof_path:
+        st.info("No proof uploaded for this declaration.")
+        return
+
+    path_obj = Path(proof_path)
+
+    if not path_obj.exists():
+        st.warning("Proof file not found on server.")
+        return
+
+    suffix = path_obj.suffix.lower()
+
+    try:
+        if suffix in [".jpg", ".jpeg", ".png"]:
+            st.image(str(path_obj), caption=path_obj.name, use_container_width=True)
+
+        elif suffix == ".pdf":
+            with open(path_obj, "rb") as f:
+                pdf_bytes = f.read()
+
+            base64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+
+            st.markdown(
+                f"""
+                <iframe
+                    src="data:application/pdf;base64,{base64_pdf}"
+                    width="100%"
+                    height="650px"
+                    style="border:1px solid #dbe3ef; border-radius:12px;">
+                </iframe>
+                """,
+                unsafe_allow_html=True
+            )
+
+        elif suffix in [".xlsx", ".xls"]:
+            preview_df = pd.read_excel(path_obj).fillna("")
+            st.dataframe(preview_df.head(50), use_container_width=True)
+            st.caption("Showing first 50 rows of uploaded Excel proof.")
+
+        else:
+            st.info("Preview not available for this file type.")
+
+        with open(path_obj, "rb") as f:
+            st.download_button(
+                "⬇️ Download Proof",
+                f.read(),
+                file_name=path_obj.name,
+                use_container_width=True
+            )
+
+    except Exception as e:
+        st.warning(f"Unable to preview proof: {e}")
+
+
 def render_admin_declaration_approval_panel():
     st.markdown("### ✅ Investment / Declaration Approval Panel")
     st.caption("Approve/reject employee investments, reimbursements, Meal Passes/Sodexo, and Form 12B/12BB.")
@@ -2546,7 +2604,7 @@ def render_admin_declaration_approval_panel():
         st.rerun()
 
     st.markdown("---")
-    st.markdown("#### Proof Download")
+    st.markdown("#### Uploaded Proof Preview")
 
     proof_df = filtered[["id", "employee_id", "employee_name", "section", "proof_file"]].copy()
     proof_df = proof_df[proof_df["proof_file"].astype(str).str.strip() != ""]
@@ -2555,23 +2613,19 @@ def render_admin_declaration_approval_panel():
         st.info("No proof files available for the current filter.")
     else:
         proof_id = st.selectbox(
-            "Select Declaration ID for Proof Download",
+            "Select Declaration ID to View Proof",
             proof_df["id"].astype(int).tolist(),
-            key="proof_download_id"
+            key="proof_preview_id"
         )
 
-        proof_path = str(proof_df[proof_df["id"] == proof_id].iloc[0]["proof_file"])
+        selected_proof_row = proof_df[proof_df["id"] == proof_id].iloc[0]
+        st.caption(
+            f"Proof for Employee {selected_proof_row.get('employee_id', '')} - "
+            f"{selected_proof_row.get('employee_name', '')} | "
+            f"Section: {selected_proof_row.get('section', '')}"
+        )
 
-        try:
-            with open(proof_path, "rb") as f:
-                st.download_button(
-                    "⬇️ Download Selected Proof",
-                    f.read(),
-                    file_name=Path(proof_path).name,
-                    use_container_width=True
-                )
-        except Exception:
-            st.warning("Proof file not accessible.")
+        render_inline_proof_viewer(selected_proof_row.get("proof_file", ""))
 
     st.markdown("---")
     csv = filtered.to_csv(index=False).encode("utf-8")
