@@ -2639,7 +2639,11 @@ def render_admin_declaration_approval_panel():
             "Other Deduction"
         ]
 
-    if st.button(key="submit_declaration_approval_updates_btn_2", use_container_width=True):
+    if st.button(
+        "✅ Submit Updates",
+        use_container_width=True,
+        key="submit_declaration_approval_updates_btn_2"
+    ):
         updated_count = 0
         deleted_count = 0
 
