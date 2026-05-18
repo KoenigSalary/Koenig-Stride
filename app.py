@@ -3125,7 +3125,7 @@ def render_admin_declaration_approval_panel():
     with c1:
         status_filter = st.selectbox(
             "Filter Status",
-            ["All", "Pending", "Approved", "Rejected", "Delete"],
+            ["All", "Pending", "Approved", "Rejected", "Edit", "Delete"],
             key="admin_decl_status_filter"
         )
 
@@ -3209,8 +3209,13 @@ def render_admin_declaration_approval_panel():
             "approved_amount": st.column_config.NumberColumn("Approved Amount", min_value=0.0, step=1000.0),
             "status": st.column_config.SelectboxColumn(
                 "Status",
-                options=["Pending", "Approved", "Rejected", "Delete"],
-                required=True
+                options=["Pending", "Approved", "Rejected", "Edit", "Delete"],
+                required=True,
+                help=(
+                    "Pending = awaiting review | Approved = accepted | "
+                    "Rejected = denied | Edit = reopen for re-submission (resets to Pending) | "
+                    "Delete = remove permanently"
+                ),
             ),
             "employee_remarks": st.column_config.TextColumn("Employee Remarks", disabled=True),
             "admin_remarks": st.column_config.TextColumn("Admin Remarks"),
@@ -3258,7 +3263,7 @@ def render_admin_declaration_approval_panel():
     else:
         st.info(
             "💡 To approve a declaration: (1) change the **Status** dropdown in the table to "
-            "`Approved`, `Rejected`, or `Delete`. (2) Optionally enter an **Approved Amount** "
+            "`Approved`, `Rejected`, `Edit`, or `Delete`. (2) Optionally enter an **Approved Amount** "
             "or **Admin Remarks**. (3) Click **Submit Updates** below — changes are NOT "
             "saved until you click the button."
         )
@@ -3276,6 +3281,7 @@ def render_admin_declaration_approval_panel():
     ):
         updated_count = 0
         deleted_count = 0
+        edited_count = 0
         skipped_count = 0
 
         # Build a lookup so we can read claimed_amount / eligible_limit from the original df
@@ -3288,7 +3294,13 @@ def render_admin_declaration_approval_panel():
         }
 
         # Valid status options (normalized)
-        VALID_STATUS = {"pending": "Pending", "approved": "Approved", "rejected": "Rejected", "delete": "Delete"}
+        VALID_STATUS = {
+            "pending": "Pending",
+            "approved": "Approved",
+            "rejected": "Rejected",
+            "edit": "Edit",
+            "delete": "Delete",
+        }
 
         for _, row in edited_df.iterrows():
             row_id = int(row["id"])
@@ -3339,6 +3351,20 @@ def render_admin_declaration_approval_panel():
                 updated_count += 1
                 continue
 
+            if new_status == "Edit":
+                # "Edit" reopens a previously-decided declaration so the admin can
+                # re-process it (e.g. they approved by mistake). We clear the
+                # approved_amount and admin_remarks (keeping any newly typed
+                # remarks) and reset status to Pending. The employee will see it
+                # as Pending again on their dashboard.
+                update_declaration_status(
+                    row_id, "Pending", 0,
+                    new_admin_remarks or "Re-opened for editing by admin",
+                    st.session_state.employee_name or "Admin",
+                )
+                edited_count += 1
+                continue
+
             # Pending (default)
             update_declaration_status(
                 row_id, "Pending", new_approved_amount, new_admin_remarks,
@@ -3348,7 +3374,7 @@ def render_admin_declaration_approval_panel():
 
         st.success(
             f"✅ Updates submitted — "
-            f"Updated: {updated_count}, Deleted: {deleted_count}, Unchanged: {skipped_count}"
+            f"Updated: {updated_count}, Re-opened: {edited_count}, Deleted: {deleted_count}, Unchanged: {skipped_count}"
         )
         st.rerun()
 
