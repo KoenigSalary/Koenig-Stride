@@ -2836,14 +2836,42 @@ def render_employee_declaration_portal():
     # ============================================================
     st.markdown("---")
     st.markdown("#### Claim Summary")
-    cs1, cs2 = st.columns(2)
-    with cs1:
-        investment_type = st.text_input("Investment / Claim Type", value=section, key="emp_decl_inv_type")
-    with cs2:
-        edited_limit = st.number_input("Eligible Limit", value=float(eligible_limit or 0), min_value=0.0, step=1000.0, key="emp_decl_limit")
 
-    cs3, cs4 = st.columns(2)
-    with cs3:
+    # Investment / Claim Type:
+    # • For generic sections (80C, 80D, HRA, etc.) the section name IS the
+    #   claim type — no point asking again, so we just use it silently.
+    # • For free-form sections ("Other Deduction") and Form 12B/12BB where the
+    #   employee might want to be more specific, we DO show the input.
+    free_form_sections = {"Other Deduction", "Form 12BB", "Form 12B (Previous Employer)"}
+    if section in free_form_sections:
+        investment_type = st.text_input(
+            "Investment / Claim Type (e.g. 'LIC Premium', 'PPF Contribution', 'Tuition Fees')",
+            value="",
+            placeholder="Describe the specific instrument or expense",
+            key="emp_decl_inv_type",
+        ) or section
+    else:
+        investment_type = section
+
+    # Eligible Limit — sourced from Salary Structure Master / regulatory limits.
+    # Read-only display so employees don't accidentally inflate it.
+    eligible_limit = float(eligible_limit or 0)
+    edited_limit = eligible_limit  # variable kept for backward compatibility downstream
+    lim_c1, lim_c2 = st.columns([1, 2])
+    with lim_c1:
+        if eligible_limit > 0:
+            st.metric(
+                "Eligible Limit",
+                f"₹{eligible_limit:,.0f}",
+                help="Configured by HR / Finance in the Salary Structure Master. Read-only.",
+            )
+        else:
+            st.metric(
+                "Eligible Limit",
+                "As per actuals",
+                help="No fixed cap configured for this section. Amount approved based on submitted proofs.",
+            )
+    with lim_c2:
         # For 12BB, auto-suggest sum from the form. For 12B, suggest gross_salary.
         suggested_claim = 0.0
         if is_12bb and form_12bb_details:
@@ -2856,19 +2884,16 @@ def render_employee_declaration_portal():
         elif is_12b and form_12b_details:
             suggested_claim = float(form_12b_details.get("gross_salary", 0))
         claimed_amount = st.number_input(
-            "Claimed Amount",
+            "Claimed Amount (₹)",
             min_value=0.0,
             step=1000.0,
             value=float(suggested_claim or 0),
             key="emp_decl_claimed_amount",
         )
-    with cs4:
-        if edited_limit > 0 and claimed_amount > edited_limit:
-            st.warning(f"Claim exceeds eligible limit by ₹{claimed_amount - edited_limit:,.2f}")
-        elif edited_limit > 0:
-            st.success("Within configured limit")
-        else:
-            st.caption("No limit configured for this section.")
+        if eligible_limit > 0 and claimed_amount > eligible_limit:
+            st.warning(f"⚠️ Claim exceeds eligible limit by ₹{claimed_amount - eligible_limit:,.0f}")
+        elif eligible_limit > 0 and claimed_amount > 0:
+            st.success(f"✅ Within configured limit (₹{claimed_amount:,.0f} of ₹{eligible_limit:,.0f})")
 
     # Legacy fields kept for backward-compatibility with payroll computation
     previous_employer_income = float(form_12b_details.get("gross_salary", 0)) if form_12b_details else 0.0
@@ -3102,17 +3127,60 @@ def render_admin_declaration_approval_panel():
         }
     )
 
-    st.info(
-        "Change Status from the dropdown (Approved / Rejected / Delete). "
-        "Approved Amount is auto-filled if you leave it blank — you can override it. "
-        "Click **Submit Updates** below to save."
-    )
+    # ----- Live preview of unsaved changes -----
+    # Compute which rows have edits relative to the original snapshot so the admin
+    # can SEE what will be saved before clicking Submit Updates.
+    pending_changes = []
+    for _, _r in edited_df.iterrows():
+        _rid = int(_r["id"])
+        _new_status = str(_r.get("status", "Pending")).strip()
+        _new_approved = float(_r.get("approved_amount", 0) or 0)
+        _new_remarks = str(_r.get("admin_remarks", "") or "")
+        _old_status = str(original_status_map.get(_rid, "")).strip()
+        _old_approved = float(original_approved_map.get(_rid, 0) or 0)
+        _old_remarks = str(original_remarks_map.get(_rid, "") or "")
+        if (
+            _new_status.lower() != _old_status.lower()
+            or abs(_new_approved - _old_approved) > 0.001
+            or _new_remarks != _old_remarks
+        ):
+            pending_changes.append({
+                "ID": _rid,
+                "Employee": f"{_r.get('employee_id','')} - {_r.get('employee_name','')}",
+                "Section": _r.get("section", ""),
+                "Old Status": _old_status or "-",
+                "→": "→",
+                "New Status": _new_status,
+                "New Approved Amount": _new_approved,
+                "Admin Remarks": _new_remarks,
+            })
 
+    if pending_changes:
+        st.warning(
+            f"⚠️ **You have {len(pending_changes)} unsaved change(s).** "
+            "These are NOT saved until you click **Submit Updates** below. "
+            "Navigating away or refreshing without clicking the button will lose your edits."
+        )
+        with st.expander(f"📝 Preview unsaved changes ({len(pending_changes)})", expanded=True):
+            st.dataframe(pd.DataFrame(pending_changes), use_container_width=True, hide_index=True)
+    else:
+        st.info(
+            "💡 To approve a declaration: (1) change the **Status** dropdown in the table to "
+            "`Approved`, `Rejected`, or `Delete`. (2) Optionally enter an **Approved Amount** "
+            "or **Admin Remarks**. (3) Click **Submit Updates** below — changes are NOT "
+            "saved until you click the button."
+        )
+
+    submit_label = (
+        f"✅ Submit Updates ({len(pending_changes)} change{'s' if len(pending_changes) != 1 else ''})"
+        if pending_changes else "✅ Submit Updates"
+    )
     if st.button(
-        "✅ Submit Updates",
+        submit_label,
         use_container_width=True,
         key="submit_declaration_approval_updates",
         type="primary",
+        disabled=not pending_changes,
     ):
         updated_count = 0
         deleted_count = 0
@@ -3127,19 +3195,24 @@ def render_admin_declaration_approval_panel():
             for _, r in filtered.iterrows()
         }
 
+        # Valid status options (normalized)
+        VALID_STATUS = {"pending": "Pending", "approved": "Approved", "rejected": "Rejected", "delete": "Delete"}
+
         for _, row in edited_df.iterrows():
             row_id = int(row["id"])
-            new_status = str(row.get("status", "Pending")).strip()
+            # Normalize status casing so "approved"/"APPROVED"/"Approved" all behave the same
+            raw_status = str(row.get("status", "Pending")).strip()
+            new_status = VALID_STATUS.get(raw_status.lower(), "Pending")
             new_approved_amount = float(row.get("approved_amount", 0) or 0)
             new_admin_remarks = str(row.get("admin_remarks", "") or "")
 
-            old_status = str(original_status_map.get(row_id, ""))
+            old_status = VALID_STATUS.get(str(original_status_map.get(row_id, "")).strip().lower(), "Pending")
             old_approved = float(original_approved_map.get(row_id, 0) or 0)
             old_remarks = str(original_remarks_map.get(row_id, "") or "")
 
             changed = (
                 new_status != old_status
-                or new_approved_amount != old_approved
+                or abs(new_approved_amount - old_approved) > 0.001
                 or new_admin_remarks != old_remarks
             )
             if not changed:
