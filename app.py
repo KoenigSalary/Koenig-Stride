@@ -2120,7 +2120,13 @@ def import_salary_monthly(df, tax_year, salary_month, mode):
     )
 
     if not emp_id_col:
-        return 0, "Employee ID column not found."
+        detected_cols = ", ".join(str(c) for c in df.columns) or "(none)"
+        return 0, (
+            "❌ Employee ID column not found.\n\n"
+            "Looked for any of: Employee ID, EmployeeID, Emp ID, EmpCode, "
+            "Employee Code, Emp Code.\n\n"
+            f"**Columns detected in your sheet:** {detected_cols}"
+        )
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -2193,7 +2199,13 @@ def import_pli_monthly(df, tax_year, salary_month, mode):
     remarks_col = find_column(df, ["Remarks", "Notes", "Comments"])
 
     if not emp_id_col:
-        return 0, "Employee ID column not found."
+        detected_cols = ", ".join(str(c) for c in df.columns) or "(none)"
+        return 0, (
+            "❌ Employee ID column not found.\n\n"
+            "Looked for any of: Employee ID, EmployeeID, Emp ID, EmpCode, "
+            "Employee Code, Emp Code.\n\n"
+            f"**Columns detected in your sheet:** {detected_cols}"
+        )
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -2259,7 +2271,13 @@ def import_tds_monthly(df, tax_year, salary_month, mode):
     tax5_col = find_column(df, ["Tax5", "Tax 5", "Net Deductible"])
 
     if not emp_id_col:
-        return 0, "Employee ID column not found."
+        detected_cols = ", ".join(str(c) for c in df.columns) or "(none)"
+        return 0, (
+            "❌ Employee ID column not found.\n\n"
+            "Looked for any of: Employee ID, EmployeeID, Emp ID, EmpCode, "
+            "Employee Code, Emp Code.\n\n"
+            f"**Columns detected in your sheet:** {detected_cols}"
+        )
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -2567,6 +2585,405 @@ def render_payroll_data_preview():
     conn.close()
 
 
+# =====================================================
+# TAX COMPUTATION ENGINE
+# Implements the 39-field tax computation per tax_cal.csv specification.
+# Pulls from: Employee Master • Salary Monthly • PLI Monthly • TDS Monthly
+# • Approved Employee Declarations.
+# =====================================================
+
+# Slabs as per the user's spec (Income Tax Act 2025, applicable from FY 2026-27)
+NEW_REGIME_SLABS = [
+    (400000, 0.00),    # Up to 4,00,000   — Nil
+    (800000, 0.05),    # 4,00,001 – 8,00,000   — 5%
+    (1200000, 0.10),   # 8,00,001 – 12,00,000  — 10%
+    (1600000, 0.15),   # 12,00,001 – 16,00,000 — 15%
+    (2000000, 0.20),   # 16,00,001 – 20,00,000 — 20%
+    (2400000, 0.25),   # 20,00,001 – 24,00,000 — 25%
+    (float("inf"), 0.30),  # Above 24,00,000      — 30%
+]
+
+OLD_REGIME_SLABS = [
+    (250000, 0.00),    # Up to 2,50,000 — Nil
+    (500000, 0.05),    # 2,50,001 – 5,00,000  — 5%
+    (1000000, 0.20),   # 5,00,001 – 10,00,000 — 20%
+    (float("inf"), 0.30),  # Above 10,00,000      — 30%
+]
+
+STD_DEDUCTION_NEW = 75000
+STD_DEDUCTION_OLD = 50000
+CESS_RATE = 0.04
+
+
+def compute_slab_tax(taxable_income: float, regime: str) -> float:
+    """Compute tax using progressive slabs. Returns base tax before cess."""
+    if taxable_income <= 0:
+        return 0.0
+    slabs = NEW_REGIME_SLABS if str(regime).strip().lower() == "new" else OLD_REGIME_SLABS
+    tax = 0.0
+    prev_threshold = 0.0
+    for upper, rate in slabs:
+        if taxable_income > upper:
+            tax += (upper - prev_threshold) * rate
+            prev_threshold = upper
+        else:
+            tax += (taxable_income - prev_threshold) * rate
+            return tax
+    return tax
+
+
+def _safe_age_years(dob_str: str) -> int:
+    """Compute age in completed years from a DOB string. Returns 0 if invalid."""
+    if not dob_str:
+        return 0
+    try:
+        dob = pd.to_datetime(str(dob_str), errors="coerce")
+        if pd.isna(dob):
+            return 0
+        today = datetime.now()
+        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        return max(0, int(age))
+    except Exception:
+        return 0
+
+
+def compute_employee_tax(employee_id: str, tax_year: str = "2026-27", regime_override: str | None = None) -> dict:
+    """Compute the full 39-field tax picture for one employee.
+
+    Returns a dict mapping every field name from the tax_cal.csv spec to its
+    computed value. Empty fields default to 0 or ""."""
+    init_payroll_database()
+    ensure_declaration_columns()
+    conn = get_db_connection()
+
+    # --- 1. Employee Master ---
+    emp_master = pd.read_sql_query(
+        "SELECT * FROM employee_master WHERE employee_id = ?",
+        conn, params=(str(employee_id),),
+    )
+    if emp_master.empty:
+        try:
+            emp_master = pd.read_sql_query(
+                "SELECT * FROM employee_master_payroll WHERE employee_id = ?",
+                conn, params=(str(employee_id),),
+            )
+        except Exception:
+            pass
+    em = emp_master.iloc[0].to_dict() if not emp_master.empty else {}
+
+    # --- 2. Salary Monthly (annualised: sum across all months of the tax year) ---
+    salary_rows = pd.read_sql_query(
+        "SELECT * FROM employee_salary_monthly WHERE employee_id = ? AND financial_year = ?",
+        conn, params=(str(employee_id), str(tax_year)),
+    )
+
+    def annual(col):
+        return float(pd.to_numeric(salary_rows.get(col, pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if not salary_rows.empty else 0.0
+
+    basic = annual("basic")
+    hra = annual("hra")
+    sodexo = annual("sodexo_meal_passes")
+    telephone = annual("telephone_internet")
+    electricity = annual("electricity_reimbursement")
+    professional = annual("professional_software")
+    skill = annual("skill_development")
+    utility = annual("power_utility_allowance")
+    taxable_allowance = annual("taxable_allowance")
+    other_adjustment = annual("other_adjustment")
+    exgratia = annual("exgratia")
+    gratuity = annual("gratuity")
+    severance = annual("severance")
+    leave_enc = annual("leave_encashment")
+    referral = annual("referral_bonus")
+
+    # --- 3. PLI / Variable Pay ---
+    try:
+        pli_rows = pd.read_sql_query(
+            "SELECT * FROM employee_pli_monthly WHERE employee_id = ? AND financial_year = ?",
+            conn, params=(str(employee_id), str(tax_year)),
+        )
+        ot_pli = float(pd.to_numeric(pli_rows.get("total_variable_pay", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if not pli_rows.empty else 0.0
+    except Exception:
+        ot_pli = 0.0
+
+    # --- 4. TDS already deducted ---
+    tds_rows = pd.read_sql_query(
+        "SELECT * FROM employee_tds_monthly WHERE employee_id = ? AND financial_year = ?",
+        conn, params=(str(employee_id), str(tax_year)),
+    )
+    tds_already_deducted = float(pd.to_numeric(tds_rows.get("tds_deducted", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if not tds_rows.empty else 0.0
+
+    # --- 5. Approved declarations ---
+    decl_rows = pd.read_sql_query(
+        "SELECT * FROM employee_investments WHERE employee_id = ? AND financial_year = ? AND status = 'Approved'",
+        conn, params=(str(employee_id), str(tax_year)),
+    )
+    conn.close()
+
+    def approved_for(section_keywords):
+        if decl_rows.empty:
+            return 0.0
+        mask = decl_rows["section"].astype(str).str.lower().apply(
+            lambda s: any(k in s for k in section_keywords)
+        )
+        return float(pd.to_numeric(decl_rows.loc[mask, "approved_amount"], errors="coerce").fillna(0).sum())
+
+    # --- 6. Resolve regime ---
+    if regime_override:
+        regime = regime_override
+    else:
+        regime_from_decl = decl_rows["tax_regime"].iloc[0] if not decl_rows.empty and "tax_regime" in decl_rows.columns and decl_rows["tax_regime"].iloc[0] else ""
+        regime_from_master = em.get("tax_regime", "")
+        regime = (regime_from_decl or regime_from_master or "New").strip()
+    is_new_regime = str(regime).strip().lower() == "new"
+
+    # --- 7. Compute the buckets ---
+    # Previous employer income (Form 12B)
+    prev_emp_income = 0.0
+    if not decl_rows.empty and "previous_employer_income" in decl_rows.columns:
+        prev_emp_income = float(pd.to_numeric(decl_rows["previous_employer_income"], errors="coerce").fillna(0).sum())
+
+    # Total Income from Salary = all income components + previous employer income
+    total_income_from_salary = (
+        basic + hra + sodexo + telephone + electricity + professional + skill +
+        utility + taxable_allowance + ot_pli + exgratia + gratuity + severance +
+        leave_enc + referral + other_adjustment + prev_emp_income
+    )
+
+    # Approved allowances / reimbursements (proof-based exemptions, only Old regime)
+    if is_new_regime:
+        approved_allowances = approved_for(["meal passes", "sodexo"])
+        approved_investments = 0.0  # No Chapter VI-A under New regime
+        home_loan_deduction = 0.0
+        other_eligible = approved_for(["80ccd(2)", "employer nps"])
+        meal_passes_decl = approved_for(["meal passes", "sodexo"])
+    else:
+        approved_allowances = approved_for([
+            "meal passes", "sodexo", "telephone", "electricity",
+            "professional", "skill", "power", "utility", "hra",
+        ])
+        approved_investments = approved_for(["80c", "80d", "80ccd", "nps", "donation", "80g"])
+        home_loan_deduction = approved_for(["home loan"])
+        other_eligible = approved_for(["other deduction", "80e", "80tta"])
+        meal_passes_decl = approved_for(["meal passes", "sodexo"])
+
+    std_deduction = STD_DEDUCTION_NEW if is_new_regime else STD_DEDUCTION_OLD
+
+    # --- 8. Taxable salary ---
+    taxable_salary = max(
+        0,
+        total_income_from_salary
+        - approved_allowances
+        - std_deduction
+        - approved_investments
+        - home_loan_deduction
+        - other_eligible,
+    )
+
+    # --- 9. Tax computation ---
+    tax1_total_tax = compute_slab_tax(taxable_salary, regime)
+    tax2_cess = tax1_total_tax * CESS_RATE
+    tax3_total_after_cess = tax1_total_tax + tax2_cess
+    tax4_total_deduction = tds_already_deducted
+    tax5_net_deductible = max(0, tax3_total_after_cess - tax4_total_deduction)
+
+    return {
+        # Identity
+        "Employee ID": str(employee_id),
+        "Employee Name": em.get("employee_name", "") or (salary_rows.iloc[0]["employee_name"] if not salary_rows.empty else ""),
+        "Tax Regime": regime,
+        "PAN No.": em.get("pan_no", ""),
+        "Gender": em.get("gender", ""),
+        "Date of Joining": em.get("doj", em.get("date_of_joining", "")),
+        "Date of Exit": em.get("doe", em.get("date_of_exit", "")),
+        "DOB": em.get("dob", ""),
+        "Age": _safe_age_years(em.get("dob", "")),
+        "Designation": em.get("designation", ""),
+        # Income components
+        "Basic Salary": basic,
+        "HRA": hra,
+        "Sodexo / Meal Passes": sodexo,
+        "Telephone / Internet": telephone,
+        "Electricity Reimbursement": electricity,
+        "Professional / Software": professional,
+        "Skill Development": skill,
+        "Power & Utility Allowance": utility,
+        "Taxable Allowance": taxable_allowance,
+        "OT / PLI / Profit Sharing": ot_pli,
+        "EXGRATIA": exgratia,
+        "Gratuity": gratuity,
+        "Severance": severance,
+        "Leave Encashment": leave_enc,
+        "Referral Bonus": referral,
+        "Other Adjustment": other_adjustment,
+        "Previous Employer Income 12B/12BB": prev_emp_income,
+        "Total Income from Salary": total_income_from_salary,
+        # Deductions
+        "Approved Allowances / Reimbursements": approved_allowances,
+        "Standard Deduction": std_deduction,
+        "Meal Passes / Sodexo Declaration": meal_passes_decl,
+        "Approved Investments": approved_investments,
+        "Home Loan Deduction": home_loan_deduction,
+        "Other Eligible Deductions": other_eligible,
+        # Tax output
+        "Taxable Salary": taxable_salary,
+        "Tax1 (Total Tax)": tax1_total_tax,
+        "Tax2 (Cess 4%)": tax2_cess,
+        "Tax3 (Total Tax after Cess)": tax3_total_after_cess,
+        "Tax4 (Total Deduction / TDS already paid)": tax4_total_deduction,
+        "Tax5 (Net Deductible)": tax5_net_deductible,
+    }
+
+
+def render_tax_computation_engine_panel():
+    """Admin panel: compute tax for any employee and view the 39-field breakdown."""
+    st.markdown("### 🧮 Tax Computation Engine")
+    st.caption("Pulls salary, PLI, TDS, and approved declarations to compute the full tax picture per Income Tax Act 2025.")
+
+    init_payroll_database()
+    ensure_declaration_columns()
+    conn = get_db_connection()
+    # Find any employee that has salary data uploaded
+    try:
+        emp_options_df = pd.read_sql_query(
+            "SELECT DISTINCT employee_id, employee_name FROM employee_salary_monthly ORDER BY employee_id",
+            conn,
+        )
+    except Exception:
+        emp_options_df = pd.DataFrame()
+    conn.close()
+
+    if emp_options_df.empty:
+        st.warning("No salary records uploaded yet. Upload a Salary Computation sheet first.")
+        return
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        emp_choice = st.selectbox(
+            "Employee",
+            emp_options_df.apply(lambda r: f"{r['employee_id']} — {r['employee_name']}", axis=1).tolist(),
+            key="tax_engine_emp",
+        )
+        employee_id = emp_choice.split(" — ")[0] if emp_choice else ""
+    with c2:
+        tax_year = st.text_input("Tax Year", value="2026-27", key="tax_engine_year")
+    with c3:
+        regime_choice = st.selectbox(
+            "Tax Regime",
+            ["Auto-detect", "New", "Old"],
+            help="Auto-detect uses the regime from the employee's most recent declaration or master record.",
+            key="tax_engine_regime",
+        )
+
+    regime_override = None if regime_choice == "Auto-detect" else regime_choice
+
+    if not employee_id:
+        return
+
+    try:
+        result = compute_employee_tax(employee_id, tax_year, regime_override)
+    except Exception as e:
+        st.error(f"Could not compute tax: {e}")
+        return
+
+    # ---- Identity card ----
+    st.markdown("#### 👤 Employee Information")
+    info_cols = st.columns(4)
+    info_cols[0].metric("Employee", f"{result['Employee ID']}", help=result["Employee Name"])
+    info_cols[1].metric("PAN", result["PAN No."] or "—")
+    info_cols[2].metric("Regime", result["Tax Regime"])
+    info_cols[3].metric("Age", f"{result['Age']} years" if result['Age'] else "—")
+
+    # ---- Income breakup ----
+    st.markdown("#### 💰 Income Breakup (Annualised)")
+    income_keys = [
+        "Basic Salary", "HRA", "Sodexo / Meal Passes", "Telephone / Internet",
+        "Electricity Reimbursement", "Professional / Software", "Skill Development",
+        "Power & Utility Allowance", "Taxable Allowance", "OT / PLI / Profit Sharing",
+        "EXGRATIA", "Gratuity", "Severance", "Leave Encashment", "Referral Bonus",
+        "Other Adjustment", "Previous Employer Income 12B/12BB",
+    ]
+    income_df = pd.DataFrame(
+        [(k, f"₹{result[k]:,.0f}") for k in income_keys if result[k]],
+        columns=["Component", "Annual Amount"],
+    )
+    if income_df.empty:
+        st.info("All income components are zero. Verify salary uploads.")
+    else:
+        st.dataframe(income_df, use_container_width=True, hide_index=True)
+    st.metric("💵 Total Income from Salary", f"₹{result['Total Income from Salary']:,.0f}")
+
+    # ---- Deductions ----
+    st.markdown("#### ➖ Deductions Applied")
+    ded_keys = [
+        "Approved Allowances / Reimbursements", "Standard Deduction",
+        "Meal Passes / Sodexo Declaration", "Approved Investments",
+        "Home Loan Deduction", "Other Eligible Deductions",
+    ]
+    ded_df = pd.DataFrame(
+        [(k, f"₹{result[k]:,.0f}") for k in ded_keys],
+        columns=["Deduction", "Amount"],
+    )
+    st.dataframe(ded_df, use_container_width=True, hide_index=True)
+    total_deductions = sum(result[k] for k in ded_keys)
+    st.metric("🔻 Total Deductions", f"₹{total_deductions:,.0f}")
+
+    # ---- Tax computation ----
+    st.markdown("#### 🧮 Tax Computation")
+    t1, t2 = st.columns(2)
+    t1.metric("Taxable Salary", f"₹{result['Taxable Salary']:,.0f}")
+    t2.metric("Tax1 (Slab Tax)", f"₹{result['Tax1 (Total Tax)']:,.0f}")
+    t3, t4 = st.columns(2)
+    t3.metric("Tax2 (4% Cess)", f"₹{result['Tax2 (Cess 4%)']:,.0f}")
+    t4.metric("Tax3 (Total + Cess)", f"₹{result['Tax3 (Total Tax after Cess)']:,.0f}")
+    t5, t6 = st.columns(2)
+    t5.metric("Tax4 (TDS Already Paid)", f"₹{result['Tax4 (Total Deduction / TDS already paid)']:,.0f}")
+    net = result["Tax5 (Net Deductible)"]
+    t6.metric(
+        "Tax5 (Net Payable)",
+        f"₹{net:,.0f}",
+        delta="⚠️ Additional tax due" if net > 0 else "✅ Fully covered",
+        delta_color="inverse" if net > 0 else "normal",
+    )
+
+    # ---- Slab visualisation ----
+    with st.expander(f"📊 {result['Tax Regime']} Regime Slabs (for reference)", expanded=False):
+        if result["Tax Regime"].lower() == "new":
+            slabs = pd.DataFrame([
+                {"Slab": "Up to ₹4,00,000", "Rate": "Nil"},
+                {"Slab": "₹4,00,001 – ₹8,00,000", "Rate": "5%"},
+                {"Slab": "₹8,00,001 – ₹12,00,000", "Rate": "10%"},
+                {"Slab": "₹12,00,001 – ₹16,00,000", "Rate": "15%"},
+                {"Slab": "₹16,00,001 – ₹20,00,000", "Rate": "20%"},
+                {"Slab": "₹20,00,001 – ₹24,00,000", "Rate": "25%"},
+                {"Slab": "Above ₹24,00,000", "Rate": "30%"},
+            ])
+            st.caption(f"Standard Deduction: ₹{STD_DEDUCTION_NEW:,}")
+        else:
+            slabs = pd.DataFrame([
+                {"Slab": "Up to ₹2,50,000", "Rate": "Nil"},
+                {"Slab": "₹2,50,001 – ₹5,00,000", "Rate": "5%"},
+                {"Slab": "₹5,00,001 – ₹10,00,000", "Rate": "20%"},
+                {"Slab": "Above ₹10,00,000", "Rate": "30%"},
+            ])
+            st.caption(f"Standard Deduction: ₹{STD_DEDUCTION_OLD:,}")
+        st.dataframe(slabs, use_container_width=True, hide_index=True)
+        st.caption("Plus 4% Health & Education Cess on the computed tax.")
+
+    # ---- Export ----
+    st.markdown("#### 📄 Export Full 39-Field Tax Statement")
+    full_df = pd.DataFrame(list(result.items()), columns=["Field", "Value"])
+    st.dataframe(full_df, use_container_width=True, hide_index=True, height=400)
+    csv_bytes = full_df.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "⬇️ Download as CSV",
+        csv_bytes,
+        file_name=f"tax_computation_{employee_id}_{tax_year}.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+
+
 def render_tax_output_fields():
     st.markdown("### 🧾 Income Breakup + Tax Output Fields")
 
@@ -2622,11 +3039,12 @@ def render_payroll_tax_engine_panel():
     # the tables already exist.
     init_payroll_database()
 
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab_engine, tab4 = st.tabs([
         "Salary Structure Master",
         "Payroll Upload Engine",
         "Payroll Data Preview",
-        "Income & Tax Fields"
+        "🧮 Tax Computation Engine",
+        "Income & Tax Fields",
     ])
 
     with tab1:
@@ -2637,6 +3055,9 @@ def render_payroll_tax_engine_panel():
 
     with tab3:
         render_payroll_data_preview()
+
+    with tab_engine:
+        render_tax_computation_engine_panel()
 
     with tab4:
         render_tax_output_fields()
@@ -3742,6 +4163,57 @@ def render_employee_tax_summary_snapshot():
                 "These were approved while you were on the Old Regime (or before you switched). "
                 "They do **not** affect your tax liability under the New Regime."
             )
+
+    # ---- Live tax computation (uses the tax engine) ----
+    st.markdown("---")
+    st.markdown("### 🧮 Your Estimated Tax (Live Calculation)")
+    st.caption(
+        "Based on Salary, PLI, TDS uploaded by HR and your approved declarations. "
+        "Slabs as per Income Tax Act 2025."
+    )
+    tax_year_input = st.text_input(
+        "Tax Year",
+        value="2026-27",
+        key="my_tax_snapshot_year",
+    )
+    try:
+        tax_result = compute_employee_tax(employee_id, tax_year_input, selected_regime)
+    except Exception as e:
+        st.warning(f"Tax computation unavailable: {e}")
+        return
+
+    if tax_result["Total Income from Salary"] <= 0:
+        st.info(
+            "📄 No salary records uploaded by HR for this tax year yet. "
+            "Your tax computation will appear here once HR uploads your salary sheet."
+        )
+        return
+
+    tc1, tc2, tc3 = st.columns(3)
+    tc1.metric("Total Income", f"₹{tax_result['Total Income from Salary']:,.0f}")
+    tc2.metric("Taxable Salary", f"₹{tax_result['Taxable Salary']:,.0f}")
+    tc3.metric("Estimated Tax (incl. cess)", f"₹{tax_result['Tax3 (Total Tax after Cess)']:,.0f}")
+
+    tn1, tn2 = st.columns(2)
+    tn1.metric("TDS Already Paid", f"₹{tax_result['Tax4 (Total Deduction / TDS already paid)']:,.0f}")
+    net_tax = tax_result["Tax5 (Net Deductible)"]
+    tn2.metric(
+        "Net Tax Payable",
+        f"₹{net_tax:,.0f}",
+        delta="⚠️ Additional tax due" if net_tax > 0 else "✅ Fully covered by TDS",
+        delta_color="inverse" if net_tax > 0 else "normal",
+    )
+
+    with st.expander("🔍 See full 39-field tax computation", expanded=False):
+        full_df = pd.DataFrame(list(tax_result.items()), columns=["Field", "Value"])
+        st.dataframe(full_df, use_container_width=True, hide_index=True, height=400)
+        st.download_button(
+            "⬇️ Download my tax statement (CSV)",
+            full_df.to_csv(index=False).encode("utf-8"),
+            file_name=f"my_tax_{employee_id}_{tax_year_input}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
 
 # =====================================================
 # LOGOUT
